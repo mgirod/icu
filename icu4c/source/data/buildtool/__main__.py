@@ -3,11 +3,12 @@
 
 import argparse
 import glob as pyglob
+import json
 import sys
 
 from . import *
 from .renderers import makefile, windirect
-from . import utils
+from . import filtration, utils
 import BUILDRULES
 
 flag_parser = argparse.ArgumentParser(
@@ -84,30 +85,47 @@ features_group.add_argument(
     nargs = "+",
     choices = AVAILABLE_FEATURES
 )
+features_group.add_argument(
+    "--filter_file",
+    help = "A path to a filter file.",
+    default = None
+)
 
 
 class Config(object):
 
     def __init__(self, args):
+        # Process arguments
         if args.whitelist:
             self._feature_set = set(args.whitelist)
         elif args.blacklist:
             self._feature_set = set(AVAILABLE_FEATURES) - set(args.blacklist)
         else:
             self._feature_set = set(AVAILABLE_FEATURES)
-        self._max_parallel = (args.seqmode == "parallel")
-        self._coll_han_type = args.collation_ucadata
+        self.max_parallel = (args.seqmode == "parallel")
+        # Either "unihan" or "implicithan"
+        self.coll_han_type = args.collation_ucadata
+
+        # Default fields before processing filter file
+        self.filters_json_data = {}
+
+        # Process filter file
+        if args.filter_file:
+            try:
+                with open(args.filter_file, "r") as f:
+                    print("Note: Applying filters from %s." % args.filter_file, file=sys.stderr)
+                    try:
+                        import hjson
+                        self.filters_json_data = hjson.load(f)
+                    except ImportError:
+                        self.filters_json_data = json.load(f)
+            except FileNotFoundError:
+                print("Error: Filter file not found at %s." % args.filter_file, file=sys.stderr)
+                exit(1)
 
     def has_feature(self, feature_name):
         assert feature_name in AVAILABLE_FEATURES
         return feature_name in self._feature_set
-
-    def max_parallel(self):
-        return self._max_parallel
-
-    def coll_han_type(self):
-        # Either "unihan" or "implicithan"
-        return self._coll_han_type
 
 
 def main():
@@ -144,13 +162,9 @@ def main():
         # For the purposes of buildtool, force Unix-style directory separators.
         return [v.replace("\\", "/")[len(args.glob_dir)+1:] for v in sorted(result_paths)]
 
-    build_dirs, raw_requests = BUILDRULES.generate(config, glob, common)
-    requests = []
-    for req in raw_requests:
-        if isinstance(req, RepeatedOrSingleExecutionRequest):
-            requests.append(utils.flatten(req, config.max_parallel()))
-        else:
-            requests.append(req)
+    build_dirs, requests = BUILDRULES.generate(config, glob, common)
+    requests = filtration.apply_filters(requests, config)
+    requests = utils.flatten_requests(requests, config, common)
 
     if args.format == "gnumake":
         print(makefile.get_gnumake_rules(

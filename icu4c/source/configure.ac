@@ -1290,13 +1290,13 @@ fi
 # Now that we're done using CPPFLAGS etc. for tests, we can change it
 # for build.
 
-if test "${CC}" == "clang"; then
+if test "${CC}" = "clang"; then
    CLANGCFLAGS="-Qunused-arguments -Wno-parentheses-equality"
 else
    CLANGCFLAGS=""
 fi
 
-if test "${CXX}" == "clang++"; then
+if test "${CXX}" = "clang++"; then
    CLANGCXXFLAGS="-Qunused-arguments -Wno-parentheses-equality"
 else
    CLANGCXXFLAGS=""
@@ -1394,6 +1394,7 @@ else
         --format gnumake \
         --seqmode parallel \
         --glob_dir "$srcdir/data" \
+        --filter_file "$ICU_DATA_FILTER_FILE" \
         > data/rules.mk
     echo "Spawning Python to generate test/testdata/rules.mk..."
     PYTHONPATH="$srcdir/test/testdata:$srcdir/data" $PYTHON3 -m buildtool \

@@ -94,6 +94,7 @@ void NumberFormatTest::runIndexedTest( int32_t index, UBool exec, const char* &n
   TESTCASE_AUTO(TestQuotes);
   TESTCASE_AUTO(TestExponential);
   TESTCASE_AUTO(TestPatterns);
+  TESTCASE_AUTO(Test20186_SpacesAroundSemicolon);
 
   // Upgrade to alphaWorks - liu 5/99
   TESTCASE_AUTO(TestExponent);
@@ -395,6 +396,25 @@ NumberFormatTest::TestPatterns(void)
             logln((UnicodeString)"Min integer digits = " + fmt.getMinimumIntegerDigits());
         }
     }
+}
+
+void NumberFormatTest::Test20186_SpacesAroundSemicolon() {
+    IcuTestErrorCode status(*this, "Test20186_SpacesAroundSemicolon");
+    DecimalFormat df(u"0.00 ; -0.00", {"en-us", status}, status);
+    expect2(df, 1, u"1.00 ");
+    expect2(df, -1, u" -1.00");
+
+    df = DecimalFormat(u"0.00;", {"en-us", status}, status);
+    expect2(df, 1, u"1.00");
+    expect2(df, -1, u"-1.00");
+
+    df = DecimalFormat(u"0.00;0.00", {"en-us", status}, status);
+    expect2(df, 1, u"1.00");
+    expect(df, -1, u"1.00");  // parses as 1, not -1
+
+    df = DecimalFormat(u" 0.00 ; -0.00 ", {"en-us", status}, status);
+    expect2(df, 1, u" 1.00 ");
+    expect2(df, -1, u" -1.00 ");
 }
 
 /*
@@ -8315,6 +8335,9 @@ void NumberFormatTest::Test11739_ParseLongCurrency() {
     ParsePosition ppos(0);
     LocalPointer<CurrencyAmount> result(nf->parseCurrency(u"1.500 амерички долар", ppos));
     assertEquals("Should parse to 1500 USD", -1, ppos.getErrorIndex());
+    if (ppos.getErrorIndex() != -1) {
+        return;
+    }
     assertEquals("Should parse to 1500 USD", 1500LL, result->getNumber().getInt64(status));
     assertEquals("Should parse to 1500 USD", u"USD", result->getISOCurrency());
 }
