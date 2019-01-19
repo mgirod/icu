@@ -1,9 +1,14 @@
 # Copyright (C) 2018 and later: Unicode, Inc. and others.
 # License & terms of use: http://www.unicode.org/copyright.html
 
+# Python 2/3 Compatibility (ICU-20299)
+# TODO(ICU-20301): Remove this.
+from __future__ import print_function
+
 from . import *
 from .. import *
 from .. import utils
+from ..request_types import *
 
 def get_gnumake_rules(build_dirs, requests, makefile_vars, **kwargs):
     makefile_string = ""
@@ -137,7 +142,7 @@ def get_gnumake_rules_helper(request, common_vars, **kwargs):
 
     if isinstance(request, SingleExecutionRequest):
         cmd = utils.format_single_request_command(request, cmd_template, common_vars)
-        dep_files = utils.get_input_files(request)
+        dep_files = request.all_input_files()
 
         if len(request.output_files) > 1:
             # Special case for multiple output files: Makefile rules should have only one

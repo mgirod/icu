@@ -220,6 +220,8 @@ void NumberFormatTest::runIndexedTest( int32_t index, UBool exec, const char* &n
   TESTCASE_AUTO(Test20037_ScientificIntegerOverflow);
   TESTCASE_AUTO(Test13840_ParseLongStringCrash);
   TESTCASE_AUTO(Test13850_EmptyStringCurrency);
+  TESTCASE_AUTO(Test20348_CurrencyPrefixOverride);
+  TESTCASE_AUTO(Test20358_GroupingInPattern);
   TESTCASE_AUTO_END;
 }
 
@@ -2118,11 +2120,62 @@ void NumberFormatTest::TestCurrencyUnit(void){
     static const UChar BAD2[] = u"??A";
     static const UChar XXX[]  = u"XXX";
     static const char XXX8[]  =  "XXX";
+    static const UChar INV[]  = u"{$%";
+    static const char INV8[]  =  "{$%";
+    static const UChar ZZZ[]  = u"zz";
+    static const char ZZZ8[]  = "zz";
+
+    UChar* EUR = (UChar*) malloc(6);
+    EUR[0] = u'E';
+    EUR[1] = u'U';
+    EUR[2] = u'R';
+    char* EUR8 = (char*) malloc(3);
+    EUR8[0] = 'E';
+    EUR8[1] = 'U';
+    EUR8[2] = 'R';
+
     CurrencyUnit cu(USD, ec);
     assertSuccess("CurrencyUnit", ec);
 
     assertEquals("getISOCurrency()", USD, cu.getISOCurrency());
     assertEquals("getSubtype()", USD8, cu.getSubtype());
+
+    CurrencyUnit inv(INV, ec);
+    assertEquals("non-invariant", U_INVARIANT_CONVERSION_ERROR, ec);
+    assertEquals("non-invariant", XXX, inv.getISOCurrency());
+    ec = U_ZERO_ERROR;
+
+    CurrencyUnit zzz(ZZZ, ec);
+    assertEquals("too short", U_ILLEGAL_ARGUMENT_ERROR, ec);
+    assertEquals("too short", XXX, zzz.getISOCurrency());
+    ec = U_ZERO_ERROR;
+
+    CurrencyUnit eur(EUR, ec);
+    assertEquals("non-nul-terminated", u"EUR", eur.getISOCurrency());
+    assertEquals("non-nul-terminated", "EUR", eur.getSubtype());
+
+    // Test StringPiece constructor
+    CurrencyUnit cu8(USD8, ec);
+    assertEquals("StringPiece constructor", USD, cu8.getISOCurrency());
+
+    CurrencyUnit inv8(INV8, ec);
+    assertEquals("non-invariant 8", U_INVARIANT_CONVERSION_ERROR, ec);
+    assertEquals("non-invariant 8", XXX, inv8.getISOCurrency());
+    ec = U_ZERO_ERROR;
+
+    CurrencyUnit zzz8(ZZZ8, ec);
+    assertEquals("too short 8", U_ILLEGAL_ARGUMENT_ERROR, ec);
+    assertEquals("too short 8", XXX, zzz8.getISOCurrency());
+    ec = U_ZERO_ERROR;
+
+    CurrencyUnit zzz8b({ZZZ8, 3}, ec);
+    assertEquals("too short 8b", U_ILLEGAL_ARGUMENT_ERROR, ec);
+    assertEquals("too short 8b", XXX, zzz8b.getISOCurrency());
+    ec = U_ZERO_ERROR;
+
+    CurrencyUnit eur8({EUR8, 3}, ec);
+    assertEquals("non-nul-terminated 8", u"EUR", eur8.getISOCurrency());
+    assertEquals("non-nul-terminated 8", "EUR", eur8.getSubtype());
 
     CurrencyUnit cu2(cu);
     if (!(cu2 == cu)){
@@ -2176,6 +2229,9 @@ void NumberFormatTest::TestCurrencyUnit(void){
     CurrencyUnit failure(*meter, ec);
     assertEquals("Copying from meter should fail", ec, U_ILLEGAL_ARGUMENT_ERROR);
     assertEquals("Copying should not give uninitialized ISO code", u"", failure.getISOCurrency());
+
+    uprv_free(EUR);
+    uprv_free(EUR8);
 }
 
 void NumberFormatTest::TestCurrencyAmount(void){
@@ -9326,6 +9382,70 @@ void NumberFormatTest::Test13850_EmptyStringCurrency() {
         assertEquals(u"Should unset the currency " + message, u"\u00A41.00", actual);
         status.errIfFailureAndReset();
     }
+}
+
+void NumberFormatTest::Test20348_CurrencyPrefixOverride() {
+    IcuTestErrorCode status(*this, "Test20348_CurrencyPrefixOverride");
+    LocalPointer<DecimalFormat> fmt(static_cast<DecimalFormat*>(
+        NumberFormat::createCurrencyInstance("en", status)));
+    UnicodeString result;
+    assertEquals("Initial pattern",
+        u"¤#,##0.00", fmt->toPattern(result.remove()));
+    assertEquals("Initial prefix",
+        u"¤", fmt->getPositivePrefix(result.remove()));
+    assertEquals("Initial suffix",
+        u"-¤", fmt->getNegativePrefix(result.remove()));
+    assertEquals("Initial format",
+        u"\u00A4100.00", fmt->format(100, result.remove(), NULL, status));
+
+    fmt->setPositivePrefix(u"$");
+    assertEquals("Set positive prefix pattern",
+        u"$#,##0.00;-\u00A4#,##0.00", fmt->toPattern(result.remove()));
+    assertEquals("Set positive prefix prefix",
+        u"$", fmt->getPositivePrefix(result.remove()));
+    assertEquals("Set positive prefix suffix",
+        u"-¤", fmt->getNegativePrefix(result.remove()));
+    assertEquals("Set positive prefix format",
+        u"$100.00", fmt->format(100, result.remove(), NULL, status));
+
+    fmt->setNegativePrefix(u"-$");
+    assertEquals("Set negative prefix pattern",
+        u"$#,##0.00;'-'$#,##0.00", fmt->toPattern(result.remove()));
+    assertEquals("Set negative prefix prefix",
+        u"$", fmt->getPositivePrefix(result.remove()));
+    assertEquals("Set negative prefix suffix",
+        u"-$", fmt->getNegativePrefix(result.remove()));
+    assertEquals("Set negative prefix format",
+        u"$100.00", fmt->format(100, result.remove(), NULL, status));
+}
+
+void NumberFormatTest::Test20358_GroupingInPattern() {
+    IcuTestErrorCode status(*this, "Test20358_GroupingInPattern");
+    LocalPointer<DecimalFormat> fmt(static_cast<DecimalFormat*>(
+        NumberFormat::createInstance("en", status)));
+    UnicodeString result;
+    assertEquals("Initial pattern",
+        u"#,##0.###", fmt->toPattern(result.remove()));
+    assertTrue("Initial grouping",
+        fmt->isGroupingUsed());
+    assertEquals("Initial format",
+        u"54,321", fmt->format(54321, result.remove(), NULL, status));
+
+    fmt->setGroupingUsed(false);
+    assertEquals("Set grouping false",
+        u"0.###", fmt->toPattern(result.remove()));
+    assertFalse("Set grouping false grouping",
+        fmt->isGroupingUsed());
+    assertEquals("Set grouping false format",
+        u"54321", fmt->format(54321, result.remove(), NULL, status));
+
+    fmt->setGroupingUsed(true);
+    assertEquals("Set grouping true",
+        u"#,##0.###", fmt->toPattern(result.remove()));
+    assertTrue("Set grouping true grouping",
+        fmt->isGroupingUsed());
+    assertEquals("Set grouping true format",
+        u"54,321", fmt->format(54321, result.remove(), NULL, status));
 }
 
 #endif /* #if !UCONFIG_NO_FORMATTING */

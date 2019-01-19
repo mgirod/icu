@@ -1,10 +1,15 @@
 # Copyright (C) 2018 and later: Unicode, Inc. and others.
 # License & terms of use: http://www.unicode.org/copyright.html
 
+# Python 2/3 Compatibility (ICU-20299)
+# TODO(ICU-20301): Remove this.
+from __future__ import print_function
+
 from distutils.sysconfig import parse_makefile
 
 from buildtool import *
 from buildtool import utils
+from buildtool.request_types import *
 
 import sys
 
@@ -15,31 +20,6 @@ def generate(config, glob, common_vars):
     if len(glob("misc/*")) == 0:
         print("Error: Cannot find data directory; please specify --glob_dir", file=sys.stderr)
         exit(1)
-
-    # DIRECTORIES
-    build_dirs = [
-        "{OUT_DIR}",
-        "{OUT_DIR}/curr",
-        "{OUT_DIR}/lang",
-        "{OUT_DIR}/region",
-        "{OUT_DIR}/zone",
-        "{OUT_DIR}/unit",
-        "{OUT_DIR}/brkitr",
-        "{OUT_DIR}/coll",
-        "{OUT_DIR}/rbnf",
-        "{OUT_DIR}/translit",
-        "{TMP_DIR}",
-        "{TMP_DIR}/curr",
-        "{TMP_DIR}/lang",
-        "{TMP_DIR}/locales",
-        "{TMP_DIR}/region",
-        "{TMP_DIR}/zone",
-        "{TMP_DIR}/unit",
-        "{TMP_DIR}/coll",
-        "{TMP_DIR}/rbnf",
-        "{TMP_DIR}/translit",
-        "{TMP_DIR}/brkitr"
-    ]
 
     requests += generate_cnvalias(config, glob, common_vars)
     requests += generate_confusables(config, glob, common_vars)
@@ -120,7 +100,7 @@ def generate(config, glob, common_vars):
         # Depends on timezoneTypes.res and keyTypeData.res.
         # TODO: We should not need this dependency to build collation.
         # TODO: Bake keyTypeData.res into the common library?
-        [DepTarget("coll_ucadata"), DepTarget("misc")])
+        [DepTarget("coll_ucadata"), DepTarget("misc_res")])
 
     requests += generate_tree(config, glob, common_vars,
         "brkitr",
@@ -129,7 +109,7 @@ def generate(config, glob, common_vars):
         "BRK_RES_CLDR_VERSION",
         "BRK_RES_SOURCE",
         False,
-        [DepTarget("brkitr_brk"), DepTarget("brkitr_dictionaries")])
+        [DepTarget("brkitr_brk"), DepTarget("dictionaries")])
 
     requests += generate_tree(config, glob, common_vars,
         "rbnf",
@@ -149,7 +129,7 @@ def generate(config, glob, common_vars):
         )
     ]
 
-    return (build_dirs, requests)
+    return requests
 
 
 def generate_cnvalias(config, glob, common_vars):
@@ -160,7 +140,7 @@ def generate_cnvalias(config, glob, common_vars):
         SingleExecutionRequest(
             name = "cnvalias",
             category = "cnvalias",
-            dep_files = [],
+            dep_targets = [],
             input_files = [input_file],
             output_files = [output_file],
             tool = IcuTool("gencnval"),
@@ -180,7 +160,7 @@ def generate_confusables(config, glob, common_vars):
         SingleExecutionRequest(
             name = "confusables",
             category = "confusables",
-            dep_files = [DepTarget("cnvalias")],
+            dep_targets = [DepTarget("cnvalias")],
             input_files = [txt1, txt2],
             output_files = [cfu],
             tool = IcuTool("gencfu"),
@@ -201,7 +181,7 @@ def generate_conversion_mappings(config, glob, common_vars):
         RepeatedOrSingleExecutionRequest(
             name = "conversion_mappings",
             category = "conversion_mappings",
-            dep_files = [],
+            dep_targets = [],
             input_files = input_files,
             output_files = output_files,
             tool = IcuTool("makeconv"),
@@ -222,7 +202,7 @@ def generate_brkitr_brk(config, glob, common_vars):
         RepeatedExecutionRequest(
             name = "brkitr_brk",
             category = "brkitr_rules",
-            dep_files = [DepTarget("cnvalias")],
+            dep_targets = [DepTarget("cnvalias")],
             input_files = input_files,
             output_files = output_files,
             tool = IcuTool("genbrk"),
@@ -244,7 +224,7 @@ def generate_stringprep(config, glob, common_vars):
         RepeatedExecutionRequest(
             name = "stringprep",
             category = "stringprep",
-            dep_files = [],
+            dep_targets = [],
             input_files = input_files,
             output_files = output_files,
             tool = IcuTool("gensprep"),
@@ -274,7 +254,7 @@ def generate_brkitr_dictionaries(config, glob, common_vars):
         RepeatedExecutionRequest(
             name = "dictionaries",
             category = "brkitr_dictionaries",
-            dep_files = [],
+            dep_targets = [],
             input_files = input_files,
             output_files = output_files,
             tool = IcuTool("gendict"),
@@ -298,7 +278,7 @@ def generate_normalization(config, glob, common_vars):
         RepeatedExecutionRequest(
             name = "normalization",
             category = "normalization",
-            dep_files = [],
+            dep_targets = [],
             input_files = input_files,
             output_files = output_files,
             tool = IcuTool("icupkg"),
@@ -317,7 +297,7 @@ def generate_coll_ucadata(config, glob, common_vars):
         SingleExecutionRequest(
             name = "coll_ucadata",
             category = "coll_ucadata",
-            dep_files = [],
+            dep_targets = [],
             input_files = [input_file],
             output_files = [output_file],
             tool = IcuTool("icupkg"),
@@ -335,7 +315,7 @@ def generate_unames(config, glob, common_vars):
         SingleExecutionRequest(
             name = "unames",
             category = "unames",
-            dep_files = [],
+            dep_targets = [],
             input_files = [input_file],
             output_files = [output_file],
             tool = IcuTool("icupkg"),
@@ -354,7 +334,7 @@ def generate_misc(config, glob, common_vars):
         RepeatedExecutionRequest(
             name = "misc_res",
             category = "misc",
-            dep_files = [],
+            dep_targets = [],
             input_files = input_files,
             output_files = output_files,
             tool = IcuTool("genrb"),
@@ -378,7 +358,7 @@ def generate_curr_supplemental(config, glob, common_vars):
         SingleExecutionRequest(
             name = "curr_supplemental_res",
             category = "curr_supplemental",
-            dep_files = [],
+            dep_targets = [],
             input_files = [input_file],
             output_files = [output_file],
             tool = IcuTool("genrb"),
@@ -407,7 +387,7 @@ def generate_translit(config, glob, common_vars):
         RepeatedOrSingleExecutionRequest(
             name = "translit_res",
             category = "translit",
-            dep_files = [],
+            dep_targets = [],
             input_files = input_files,
             output_files = output_files,
             tool = IcuTool("genrb"),
@@ -433,7 +413,7 @@ def generate_tree(
         version_var,
         source_var,
         use_pool_bundle,
-        dep_files):
+        dep_targets):
     requests = []
     category = "%s_tree" % sub_dir
     out_prefix = "%s/" % out_sub_dir if out_sub_dir else ""
@@ -459,7 +439,7 @@ def generate_tree(
             SingleExecutionRequest(
                 name = pool_target_name,
                 category = category,
-                dep_files = dep_files,
+                dep_targets = dep_targets,
                 input_files = input_files,
                 output_files = input_pool_files,
                 tool = IcuTool("genrb"),
@@ -473,7 +453,7 @@ def generate_tree(
                 }
             ),
         ]
-        dep_files = dep_files + [DepTarget(pool_target_name)]
+        dep_targets = dep_targets + [DepTarget(pool_target_name)]
     else:
         use_pool_bundle_option = ""
 
@@ -482,7 +462,7 @@ def generate_tree(
         RepeatedOrSingleExecutionRequest(
             name = "%s_res" % sub_dir,
             category = category,
-            dep_files = dep_files,
+            dep_targets = dep_targets,
             input_files = input_files,
             output_files = output_files,
             tool = IcuTool("genrb"),
@@ -538,7 +518,7 @@ def generate_tree(
         SingleExecutionRequest(
             name = "%s_index_res" % sub_dir,
             category = "%s_index" % sub_dir,
-            dep_files = [],
+            dep_targets = [],
             input_files = [index_file_txt],
             output_files = [index_res_file],
             tool = IcuTool("genrb"),

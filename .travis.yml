@@ -35,14 +35,16 @@ matrix:
         - make -j2
       script:
         - make -j2 check
-        - ( cd test/depstest && ./depstest.py ../../../source/ )
+        - ( cd test/depstest && python3 depstest.py ../../../source/ )
 
     - name: "c: osx clang"
       language: cpp
       env:      BUILD=MACINTOSH
       os:       osx
       compiler: clang
-      script:   cd icu4c/source && ./runConfigureICU MacOSX && make -j2 check
+      # Use the macOS target to test Python 2 in data build script.
+      # TODO(ICU-20301): Change this back to the default Python version 3.
+      script:   cd icu4c/source && PYTHON=python2 ./runConfigureICU MacOSX && make -j2 check
 
     # Clang Linux with address sanitizer.
     # Note - the 'sudo: true' option forces Travis to use a Virtual machine on GCE instead of

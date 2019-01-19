@@ -4,11 +4,10 @@
 from distutils.sysconfig import parse_makefile
 
 from buildtool import *
+from buildtool.request_types import *
 
 
 def generate(config, glob, common_vars):
-    build_dirs = ["{OUT_DIR}", "{TMP_DIR}"]
-
     requests = []
     requests += generate_rb(config, glob, common_vars)
     requests += generate_sprep(config, glob, common_vars)
@@ -25,7 +24,7 @@ def generate(config, glob, common_vars):
         )
     ]
 
-    return (build_dirs, requests)
+    return requests
 
 
 def generate_rb(config, glob, common_vars):
@@ -96,6 +95,17 @@ def generate_rb(config, glob, common_vars):
             output_files = [TmpFile("zoneinfo64.res")],
             tool = IcuTool("genrb"),
             args = "-s {IN_DIR} -d {TMP_DIR} {INPUT_FILES[0]}",
+            format_with = {}
+        ),
+        SingleExecutionRequest(
+            name = "filtertest",
+            category = "tests",
+            dep_files = [],
+            input_files = [InFile("filtertest.txt")],
+            output_files = [OutFile("filtertest.res")],
+            tool = IcuTool("genrb"),
+            args = "-s {IN_DIR} -d {OUT_DIR} -i {OUT_DIR} "
+                "--filterDir {IN_DIR}/filters filtertest.txt",
             format_with = {}
         )
     ]

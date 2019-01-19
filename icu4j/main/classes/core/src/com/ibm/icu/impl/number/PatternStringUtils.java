@@ -32,56 +32,33 @@ public class PatternStringUtils {
         // Convenience references
         // The Math.min() calls prevent DoS
         int dosMax = 100;
-        int groupingSize = Math.min(properties.getSecondaryGroupingSize(), dosMax);
-        int firstGroupingSize = Math.min(properties.getGroupingSize(), dosMax);
+        int grouping1 = Math.max(0, Math.min(properties.getGroupingSize(), dosMax));
+        int grouping2 = Math.max(0, Math.min(properties.getSecondaryGroupingSize(), dosMax));
+        boolean useGrouping = properties.getGroupingUsed();
         int paddingWidth = Math.min(properties.getFormatWidth(), dosMax);
         PadPosition paddingLocation = properties.getPadPosition();
         String paddingString = properties.getPadString();
-        int minInt = Math.max(Math.min(properties.getMinimumIntegerDigits(), dosMax), 0);
+        int minInt = Math.max(0, Math.min(properties.getMinimumIntegerDigits(), dosMax));
         int maxInt = Math.min(properties.getMaximumIntegerDigits(), dosMax);
-        int minFrac = Math.max(Math.min(properties.getMinimumFractionDigits(), dosMax), 0);
+        int minFrac = Math.max(0, Math.min(properties.getMinimumFractionDigits(), dosMax));
         int maxFrac = Math.min(properties.getMaximumFractionDigits(), dosMax);
         int minSig = Math.min(properties.getMinimumSignificantDigits(), dosMax);
         int maxSig = Math.min(properties.getMaximumSignificantDigits(), dosMax);
         boolean alwaysShowDecimal = properties.getDecimalSeparatorAlwaysShown();
         int exponentDigits = Math.min(properties.getMinimumExponentDigits(), dosMax);
         boolean exponentShowPlusSign = properties.getExponentSignAlwaysShown();
-        String pp = properties.getPositivePrefix();
-        String ppp = properties.getPositivePrefixPattern();
-        String ps = properties.getPositiveSuffix();
-        String psp = properties.getPositiveSuffixPattern();
-        String np = properties.getNegativePrefix();
-        String npp = properties.getNegativePrefixPattern();
-        String ns = properties.getNegativeSuffix();
-        String nsp = properties.getNegativeSuffixPattern();
+        PropertiesAffixPatternProvider affixes = new PropertiesAffixPatternProvider(properties);
 
         // Prefixes
-        if (ppp != null) {
-            sb.append(ppp);
-        }
-        AffixUtils.escape(pp, sb);
+        sb.append(affixes.getString(AffixPatternProvider.FLAG_POS_PREFIX));
         int afterPrefixPos = sb.length();
 
         // Figure out the grouping sizes.
-        int grouping1, grouping2, grouping;
-        if (groupingSize != Math.min(dosMax, -1)
-                && firstGroupingSize != Math.min(dosMax, -1)
-                && groupingSize != firstGroupingSize) {
-            grouping = groupingSize;
-            grouping1 = groupingSize;
-            grouping2 = firstGroupingSize;
-        } else if (groupingSize != Math.min(dosMax, -1)) {
-            grouping = groupingSize;
-            grouping1 = 0;
-            grouping2 = groupingSize;
-        } else if (firstGroupingSize != Math.min(dosMax, -1)) {
-            grouping = groupingSize;
-            grouping1 = 0;
-            grouping2 = firstGroupingSize;
-        } else {
-            grouping = 0;
+        if (!useGrouping) {
             grouping1 = 0;
             grouping2 = 0;
+        } else if (grouping1 == grouping2) {
+            grouping1 = 0;
         }
         int groupingLength = grouping1 + grouping2 + 1;
 
@@ -128,12 +105,20 @@ public class PatternStringUtils {
             } else {
                 sb.append(digitsString.charAt(di));
             }
-            if (magnitude > grouping2 && grouping > 0 && (magnitude - grouping2) % grouping == 0) {
-                sb.append(',');
-            } else if (magnitude > 0 && magnitude == grouping2) {
-                sb.append(',');
-            } else if (magnitude == 0 && (alwaysShowDecimal || mN < 0)) {
+            // Decimal separator
+            if (magnitude == 0 && (alwaysShowDecimal || mN < 0)) {
                 sb.append('.');
+            }
+            if (!useGrouping) {
+                continue;
+            }
+            // Least-significant grouping separator
+            if (magnitude > 0 && magnitude == grouping1) {
+                sb.append(',');
+            }
+            // All other grouping separators
+            if (magnitude > grouping1 && grouping2 > 0 && (magnitude - grouping1) % grouping2 == 0) {
+                sb.append(',');
             }
         }
 
@@ -150,10 +135,7 @@ public class PatternStringUtils {
 
         // Suffixes
         int beforeSuffixPos = sb.length();
-        if (psp != null) {
-            sb.append(psp);
-        }
-        AffixUtils.escape(ps, sb);
+        sb.append(affixes.getString(AffixPatternProvider.FLAG_POS_SUFFIX));
 
         // Resolve Padding
         if (paddingWidth != -1) {
@@ -188,20 +170,13 @@ public class PatternStringUtils {
 
         // Negative affixes
         // Ignore if the negative prefix pattern is "-" and the negative suffix is empty
-        if (np != null
-                || ns != null
-                || (npp == null && nsp != null)
-                || (npp != null && (npp.length() != 1 || npp.charAt(0) != '-' || nsp.length() != 0))) {
+        if (affixes.hasNegativeSubpattern()) {
             sb.append(';');
-            if (npp != null)
-                sb.append(npp);
-            AffixUtils.escape(np, sb);
+            sb.append(affixes.getString(AffixPatternProvider.FLAG_NEG_PREFIX));
             // Copy the positive digit format into the negative.
             // This is optional; the pattern is the same as if '#' were appended here instead.
             sb.append(sb, afterPrefixPos, beforeSuffixPos);
-            if (nsp != null)
-                sb.append(nsp);
-            AffixUtils.escape(ns, sb);
+            sb.append(affixes.getString(AffixPatternProvider.FLAG_NEG_SUFFIX));
         }
 
         return sb.toString();

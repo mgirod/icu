@@ -6373,4 +6373,64 @@ public class NumberFormatTest extends TestFmwk {
 
         assertEquals("Should round-trip without crashing", expectedUString, actualUString);
     }
+
+    @Test
+    public void test20348_CurrencyPrefixOverride() {
+        DecimalFormat fmt = (DecimalFormat) NumberFormat.getCurrencyInstance(ULocale.ENGLISH);
+        assertEquals("Initial pattern",
+            "¤#,##0.00", fmt.toPattern());
+        assertEquals("Initial prefix",
+            "¤", fmt.getPositivePrefix());
+        assertEquals("Initial suffix",
+            "-¤", fmt.getNegativePrefix());
+        assertEquals("Initial format",
+            "\u00A4100.00", fmt.format(100));
+
+        fmt.setPositivePrefix("$");
+        assertEquals("Set positive prefix pattern",
+            "$#,##0.00;-\u00A4#,##0.00", fmt.toPattern());
+        assertEquals("Set positive prefix prefix",
+            "$", fmt.getPositivePrefix());
+        assertEquals("Set positive prefix suffix",
+            "-¤", fmt.getNegativePrefix());
+        assertEquals("Set positive prefix format",
+            "$100.00", fmt.format(100));
+
+        fmt.setNegativePrefix("-$");
+        assertEquals("Set negative prefix pattern",
+            "$#,##0.00;'-'$#,##0.00", fmt.toPattern());
+        assertEquals("Set negative prefix prefix",
+            "$", fmt.getPositivePrefix());
+        assertEquals("Set negative prefix suffix",
+            "-$", fmt.getNegativePrefix());
+        assertEquals("Set negative prefix format",
+            "$100.00", fmt.format(100));
+    }
+
+    @Test
+    public void test20358_GroupingInPattern() {
+        DecimalFormat fmt = (DecimalFormat) NumberFormat.getInstance(ULocale.ENGLISH);
+        assertEquals("Initial pattern",
+            "#,##0.###", fmt.toPattern());
+        assertTrue("Initial grouping",
+            fmt.isGroupingUsed());
+        assertEquals("Initial format",
+            "54,321", fmt.format(54321));
+
+        fmt.setGroupingUsed(false);
+        assertEquals("Set grouping false",
+            "0.###", fmt.toPattern());
+        assertFalse("Set grouping false grouping",
+            fmt.isGroupingUsed());
+        assertEquals("Set grouping false format",
+            "54321", fmt.format(54321));
+
+        fmt.setGroupingUsed(true);
+        assertEquals("Set grouping true",
+            "#,##0.###", fmt.toPattern());
+        assertTrue("Set grouping true grouping",
+            fmt.isGroupingUsed());
+        assertEquals("Set grouping true format",
+            "54,321", fmt.format(54321));
+    }
 }

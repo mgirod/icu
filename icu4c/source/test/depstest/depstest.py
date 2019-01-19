@@ -23,6 +23,8 @@ Sample invocation with an out-of-source build:
   ~/icu/icu4c/source/test/depstest$ ./depstest.py ~/build/
 """
 
+from __future__ import print_function
+
 __author__ = "Markus W. Scherer"
 
 import glob
@@ -43,12 +45,21 @@ _virtual_classes = set()
 # nm shows a symbol class of "W" rather than "T".
 _weak_destructors = set()
 
+def iteritems(items):
+  """Python 2/3-compatible iteritems"""
+  try:
+    for v in items.iteritems():
+      yield v
+  except AttributeError:
+    for v in items.items():
+      yield v
+
 def _ReadObjFile(root_path, library_name, obj_name):
   global _ignored_symbols, _obj_files, _symbols_to_files
   global _virtual_classes, _weak_destructors
   lib_obj_name = library_name + "/" + obj_name
   if lib_obj_name in _obj_files:
-    print "Warning: duplicate .o file " + lib_obj_name
+    print("Warning: duplicate .o file " + lib_obj_name)
     _return_value = 2
     return
 
@@ -59,7 +70,7 @@ def _ReadObjFile(root_path, library_name, obj_name):
   obj_imports = set()
   obj_exports = set()
   for line in nm_result.splitlines():
-    fields = line.split("|")
+    fields = line.decode().split("|")
     if len(fields) == 1: continue
     name = fields[0].strip()
     # Ignore symbols like '__cxa_pure_virtual',
@@ -133,7 +144,7 @@ def _Resolve(name, parents):
       dep_exports = dep_item["exports"]
       dep_system_symbols = dep_item["system_symbols"]
       if files and imports.isdisjoint(dep_exports) and imports.isdisjoint(dep_system_symbols):
-        print "Info:  %s %s  does not need to depend on  %s\n" % (item_type, name, dep)
+        print("Info:  %s %s  does not need to depend on  %s\n" % (item_type, name, dep))
       # We always include the dependency's exports, even if we do not need them
       # to satisfy local imports.
       exports |= dep_exports
@@ -166,7 +177,7 @@ def Process(root_path):
   global _ignored_symbols, _obj_files, _return_value
   global _virtual_classes, _weak_destructors
   dependencies.Load()
-  for name_and_item in dependencies.items.iteritems():
+  for name_and_item in iteritems(dependencies.items):
     name = name_and_item[0]
     item = name_and_item[1]
     system_symbols = item.get("system_symbols")
@@ -205,11 +216,11 @@ def main():
              "need one argument with the root path to the built ICU libraries/*.o files."))
   Process(sys.argv[1])
   if _ignored_symbols:
-    print "Info: ignored symbols:\n%s" % sorted(_ignored_symbols)
+    print("Info: ignored symbols:\n%s" % sorted(_ignored_symbols))
   if not _return_value:
-    print "OK: Specified and actual dependencies match."
+    print("OK: Specified and actual dependencies match.")
   else:
-    print "Error: There were errors, please fix them and re-run. Processing may have terminated abnormally."
+    print("Error: There were errors, please fix them and re-run. Processing may have terminated abnormally.")
   return _return_value
 
 if __name__ == "__main__":

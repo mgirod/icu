@@ -1,16 +1,24 @@
 # Copyright (C) 2018 and later: Unicode, Inc. and others.
 # License & terms of use: http://www.unicode.org/copyright.html
 
-from abc import ABC, abstractmethod
+# Python 2/3 Compatibility (ICU-20299)
+# TODO(ICU-20301): Remove this.
+from __future__ import print_function
+
+from abc import abstractmethod
 from collections import defaultdict
 import re
 import sys
 
 from . import *
 from . import utils
+from .request_types import *
 
 
-class Filter(ABC):
+# Note: for this to be a proper abstract class, it should extend abc.ABC.
+# There is no nice way to do this that works in both Python 2 and 3.
+# TODO(ICU-20301): Make this inherit from abc.ABC.
+class Filter(object):
     @staticmethod
     def create_from_json(json_data):
         if "filterType" in json_data:
@@ -30,14 +38,26 @@ class Filter(ABC):
             print("Error: Unknown filterType option: %s" % filter_type, file=sys.stderr)
             return None
 
-    @abstractmethod
     def filter(self, request):
+        if not request.apply_file_filter(self):
+            return []
+        for file in request.all_input_files():
+            assert self.match(file)
+        return [request]
+
+    @abstractmethod
+    def match(self, file):
         pass
 
 
+class InclusionFilter(Filter):
+    def match(self, file):
+        return True
+
+
 class ExclusionFilter(Filter):
-    def filter(self, request):
-        return []
+    def match(self, file):
+        return False
 
 
 class WhitelistBlacklistFilter(Filter):
@@ -49,139 +69,9 @@ class WhitelistBlacklistFilter(Filter):
             self.is_whitelist = False
             self.blacklist = json_data["blacklist"]
 
-    def filter(self, request):
-        if isinstance(request, SingleExecutionRequest):
-            return self._filter_single(request)
-        elif isinstance(request, RepeatedExecutionRequest):
-            return self._filter_repeated(request)
-        elif isinstance(request, RepeatedOrSingleExecutionRequest):
-            return self._filter_repeated_or_single(request)
-        elif isinstance(request, IndexTxtRequest):
-            return self._filter_index_txt(request)
-        else:
-            # Assert that no other types are needed
-            for file in utils.get_input_files(request):
-                file_stem = self._file_to_file_stem(file)
-                assert self._should_include(file_stem), request
-            return [request]
-
-    def _filter_single(self, request):
-        new_input_files = []
-        new_format_with = defaultdict(utils.SpaceSeparatedList)
-        for i in range(len(request.input_files)):
-            file_stem = self._file_to_file_stem(request.input_files[i])
-            if self._should_include(file_stem):
-                new_input_files.append(request.input_files[i])
-                for k,v in request.format_with.items():
-                    if isinstance(v, list):
-                        new_format_with[k].append(v[i])
-
-        # Return a new request if there are still >= 1 input files.
-        if new_input_files:
-            return [
-                SingleExecutionRequest(
-                    name = request.name,
-                    category = request.category,
-                    dep_files = request.dep_files,
-                    input_files = new_input_files,
-                    output_files = request.output_files,
-                    tool = request.tool,
-                    args = request.args,
-                    format_with = utils.concat_dicts(request.format_with, new_format_with)
-                )
-            ]
-        return []
-
-    def _filter_repeated(self, request):
-        new_input_files = []
-        new_output_files = []
-        new_format_with = defaultdict(utils.SpaceSeparatedList)
-        new_repeat_with = defaultdict(utils.SpaceSeparatedList)
-        for i in range(len(request.input_files)):
-            file_stem = self._file_to_file_stem(request.input_files[i])
-            if self._should_include(file_stem):
-                new_input_files.append(request.input_files[i])
-                new_output_files.append(request.output_files[i])
-                for k,v in request.format_with.items():
-                    if isinstance(v, list):
-                        new_format_with[k].append(v[i])
-                for k,v in request.repeat_with.items():
-                    assert isinstance(v, list)
-                    new_repeat_with[k].append(v[i])
-
-        # Return a new request if there are still >= 1 input files.
-        if new_input_files:
-            return [
-                RepeatedExecutionRequest(
-                    name = request.name,
-                    category = request.category,
-                    dep_files = request.dep_files,
-                    input_files = new_input_files,
-                    output_files = new_output_files,
-                    tool = request.tool,
-                    args = request.args,
-                    format_with = utils.concat_dicts(request.format_with, new_format_with),
-                    repeat_with = utils.concat_dicts(request.repeat_with, new_repeat_with)
-                )
-            ]
-        else:
-            return []
-
-    def _filter_repeated_or_single(self, request):
-        new_input_files = []
-        new_output_files = []
-        new_format_with = defaultdict(utils.SpaceSeparatedList)
-        new_repeat_with = defaultdict(utils.SpaceSeparatedList)
-        for i in range(len(request.input_files)):
-            file_stem = self._file_to_file_stem(request.input_files[i])
-            if self._should_include(file_stem):
-                new_input_files.append(request.input_files[i])
-                new_output_files.append(request.output_files[i])
-                for k,v in request.format_with.items():
-                    if isinstance(v, list):
-                        new_format_with[k].append(v[i])
-                for k,v in request.repeat_with.items():
-                    assert isinstance(v, list)
-                    new_repeat_with[k].append(v[i])
-
-        # Return a new request if there are still >= 1 input files.
-        if new_input_files:
-            return [
-                RepeatedOrSingleExecutionRequest(
-                    name = request.name,
-                    category = request.category,
-                    dep_files = request.dep_files,
-                    input_files = new_input_files,
-                    output_files = new_output_files,
-                    tool = request.tool,
-                    args = request.args,
-                    format_with = utils.concat_dicts(request.format_with, new_format_with),
-                    repeat_with = utils.concat_dicts(request.repeat_with, new_repeat_with)
-                )
-            ]
-        else:
-            return []
-
-    def _filter_index_txt(self, request):
-        new_input_files = []
-        for file in request.input_files:
-            file_stem = self._file_to_file_stem(file)
-            if self._should_include(file_stem):
-                new_input_files.append(file)
-
-        # Return a new request if there are still >= 1 input files.
-        if new_input_files:
-            return [
-                IndexTxtRequest(
-                    name = request.name,
-                    category = request.category,
-                    input_files = new_input_files,
-                    output_file = request.output_file,
-                    cldr_version = request.cldr_version
-                )
-            ]
-        else:
-            return []
+    def match(self, file):
+        file_stem = self._file_to_file_stem(file)
+        return self._should_include(file_stem)
 
     @classmethod
     def _file_to_file_stem(cls, file):
@@ -216,7 +106,8 @@ class LanguageFilter(WhitelistBlacklistFilter):
 
 class RegexFilter(WhitelistBlacklistFilter):
     def __init__(self, *args):
-        super().__init__(*args)
+        # TODO(ICU-20301): Change this to: super().__init__(*args)
+        super(RegexFilter, self).__init__(*args)
         if self.is_whitelist:
             self.whitelist = [re.compile(pat) for pat in self.whitelist]
         else:
@@ -235,12 +126,19 @@ class RegexFilter(WhitelistBlacklistFilter):
             return True
 
 
-def apply_filters(old_requests, config):
+def apply_filters(requests, config):
     """Runs the filters and returns a new list of requests."""
-    filters = _preprocess_filters(old_requests, config)
+    requests = _apply_file_filters(requests, config)
+    requests = _apply_resource_filters(requests, config)
+    return requests
+
+
+def _apply_file_filters(old_requests, config):
+    """Filters out entire files."""
+    filters = _preprocess_file_filters(old_requests, config)
     new_requests = []
     for request in old_requests:
-        category = utils.get_category(request)
+        category = request.category
         if category in filters:
             new_requests += filters[category].filter(request)
         else:
@@ -248,9 +146,9 @@ def apply_filters(old_requests, config):
     return new_requests
 
 
-def _preprocess_filters(requests, config):
+def _preprocess_file_filters(requests, config):
     all_categories = set(
-        utils.get_category(request)
+        request.category
         for request in requests
     )
     all_categories.remove(None)
@@ -271,3 +169,124 @@ def _preprocess_filters(requests, config):
             if category not in all_categories:
                 print("Warning: category %s is not known" % category, file=sys.stderr)
     return filters
+
+
+class ResourceFilterInfo(object):
+    def __init__(self, category):
+        self.category = category
+        self.filter_tmp_dir = "filters/%s" % category
+        self.input_files = None
+        self.filter_files = None
+        self.rules_by_file = None
+
+    def apply_to_requests(self, all_requests):
+        # Call this method only once per list of requests.
+        assert self.input_files is None
+        for request in all_requests:
+            if request.category != self.category:
+                continue
+            if not isinstance(request, AbstractExecutionRequest):
+                continue
+            if request.tool != IcuTool("genrb"):
+                continue
+            self._set_files(request.input_files)
+            # Add dependencies directly to dep_files
+            request.dep_files += self.filter_files
+            arg_str = "--filterDir {TMP_DIR}/%s" % self.filter_tmp_dir
+            request.args = "%s %s" % (arg_str, request.args)
+
+        # Make sure we found the target request
+        if self.input_files is None:
+            print("WARNING: Category not found: %s" % self.category, file=sys.stderr)
+            self.input_files = []
+            self.filter_files = []
+            self.rules_by_file = []
+
+    def _set_files(self, files):
+        # Note: The input files to genrb for a certain category should always
+        # be the same. For example, there are often two genrb calls: one for
+        # --writePoolBundle, and the other for --usePoolBundle. They are both
+        # expected to have the same list of input files.
+        if self.input_files is not None:
+            assert self.input_files == files
+            return
+        self.input_files = list(files)
+        self.filter_files = [
+            TmpFile("%s/%s" % (self.filter_tmp_dir, basename))
+            for basename in (
+                file.filename[file.filename.rfind("/")+1:]
+                for file in files
+            )
+        ]
+        self.rules_by_file = [[] for _ in range(len(files))]
+
+    def add_rules(self, file_filter, rules):
+        for file, rule_list in zip(self.input_files, self.rules_by_file):
+            if file_filter.match(file):
+                rule_list += rules
+
+    def make_requests(self):
+        # Map from rule list to filter files with that rule list
+        unique_rules = defaultdict(list)
+        for filter_file, rules in zip(self.filter_files, self.rules_by_file):
+            unique_rules[tuple(rules)].append(filter_file)
+
+        new_requests = []
+        i = 0
+        for rules, filter_files in unique_rules.items():
+            base_filter_file = filter_files[0]
+            new_requests += [
+                PrintFileRequest(
+                    name = "%s_print_%d" % (self.category, i),
+                    output_file = base_filter_file,
+                    content = self._generate_resource_filter_txt(rules)
+                )
+            ]
+            i += 1
+            for filter_file in filter_files[1:]:
+                new_requests += [
+                    CopyRequest(
+                        name = "%s_copy_%d" % (self.category, i),
+                        input_file = base_filter_file,
+                        output_file = filter_file
+                    )
+                ]
+                i += 1
+        return new_requests
+
+    @classmethod
+    def _generate_resource_filter_txt(cls, rules):
+        result = "# Caution: This file is automatically generated\n\n"
+        result += "\n".join(rules)
+        return result
+
+
+def _apply_resource_filters(all_requests, config):
+    """Creates filters for looking within resource bundle files."""
+    json_data = config.filters_json_data
+    if "resourceFilters" not in json_data:
+        return all_requests
+
+    collected = {}
+    for entry in json_data["resourceFilters"]:
+        if "files" in entry:
+            file_filter = Filter.create_from_json(entry["files"])
+        else:
+            file_filter = InclusionFilter()
+        for category in entry["categories"]:
+            # not defaultdict because we need to pass arguments to the constructor
+            if category not in collected:
+                filter_info = ResourceFilterInfo(category)
+                filter_info.apply_to_requests(all_requests)
+                collected[category] = filter_info
+            else:
+                filter_info = collected[category]
+            filter_info.add_rules(file_filter, entry["rules"])
+
+    # Add the filter generation requests to the beginning so that by default
+    # they are made before genrb gets run (order is required by windirect)
+    new_requests = []
+    for filter_info in collected.values():
+        new_requests += filter_info.make_requests()
+    new_requests += all_requests
+    return new_requests
