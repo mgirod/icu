@@ -5,6 +5,9 @@
 #define __FORMATTEDVALUE_H__
 
 #include "unicode/utypes.h"
+
+#if U_SHOW_CPLUSPLUS_API
+
 #if !UCONFIG_NO_FORMATTING
 
 #include "unicode/appendable.h"
@@ -23,6 +26,10 @@ U_NAMESPACE_BEGIN
  */
 
 
+// The following cannot have #ifndef U_HIDE_DRAFT_API because
+// class FormattedValue depends on it, and FormattedValue cannot be
+// hidden becauseclass FormattedNumber (stable ICU 60) depends on it.
+#ifndef U_FORCE_HIDE_DRAFT_API
 /**
  * Represents a span of a string containing a given field.
  *
@@ -51,6 +58,7 @@ class U_I18N_API ConstrainedFieldPosition : public UMemory {
     /** @draft ICU 64 */
     ~ConstrainedFieldPosition();
 
+#ifndef U_HIDE_DRAFT_API
     /**
      * Resets this ConstrainedFieldPosition to its initial state, as if it were newly created:
      *
@@ -83,7 +91,7 @@ class U_I18N_API ConstrainedFieldPosition : public UMemory {
      * @param category The field category to fix when iterating.
      * @draft ICU 64
      */
-    void constrainCategory(UFieldCategory category);
+    void constrainCategory(int32_t category);
 
     /**
      * Sets a constraint on the category and field.
@@ -108,37 +116,25 @@ class U_I18N_API ConstrainedFieldPosition : public UMemory {
      * @param field The field to fix when iterating.
      * @draft ICU 64
      */
-    void constrainField(UFieldCategory category, int32_t field);
-
-    /**
-     * Gets the currently active constraint.
-     *
-     * @return The currently active constraint type.
-     * @draft ICU 64
-     */
-    inline UCFPosConstraintType getConstraintType() const {
-        return fConstraint;
-    }
+    void constrainField(int32_t category, int32_t field);
 
     /**
      * Gets the field category for the current position.
      *
-     * If a category or field constraint was set, this function returns the constrained
-     * category. Otherwise, the return value is well-defined only after
+     * The return value is well-defined only after
      * FormattedValue#nextPosition returns TRUE.
      *
      * @return The field category saved in the instance.
      * @draft ICU 64
      */
-    inline UFieldCategory getCategory() const {
+    inline int32_t getCategory() const {
         return fCategory;
-    };
+    }
 
     /**
      * Gets the field for the current position.
      *
-     * If a field constraint was set, this function returns the constrained
-     * field. Otherwise, the return value is well-defined only after
+     * The return value is well-defined only after
      * FormattedValue#nextPosition returns TRUE.
      *
      * @return The field saved in the instance.
@@ -146,7 +142,7 @@ class U_I18N_API ConstrainedFieldPosition : public UMemory {
      */
     inline int32_t getField() const {
         return fField;
-    };
+    }
 
     /**
      * Gets the INCLUSIVE start index for the current position.
@@ -158,7 +154,7 @@ class U_I18N_API ConstrainedFieldPosition : public UMemory {
      */
     inline int32_t getStart() const {
         return fStart;
-    };
+    }
 
     /**
      * Gets the EXCLUSIVE end index stored for the current position.
@@ -170,7 +166,7 @@ class U_I18N_API ConstrainedFieldPosition : public UMemory {
      */
     inline int32_t getLimit() const {
         return fLimit;
-    };
+    }
 
     ////////////////////////////////////////////////////////////////////
     //// The following methods are for FormattedValue implementers; ////
@@ -202,6 +198,18 @@ class U_I18N_API ConstrainedFieldPosition : public UMemory {
     void setInt64IterationContext(int64_t context);
 
     /**
+     * Determines whether a given field should be included given the
+     * constraints.
+     *
+     * Intended to be used by FormattedValue implementations.
+     *
+     * @param category The category to test.
+     * @param field The field to test.
+     * @draft ICU 64
+     */
+    UBool matchesField(int32_t category, int32_t field) const;
+
+    /**
      * Sets new values for the primary public getters.
      *
      * Intended to be used by FormattedValue implementations.
@@ -216,21 +224,27 @@ class U_I18N_API ConstrainedFieldPosition : public UMemory {
      * @draft ICU 64
      */
     void setState(
-        UFieldCategory category,
+        int32_t category,
         int32_t field,
         int32_t start,
         int32_t limit);
+#endif  /* U_HIDE_DRAFT_API */
 
   private:
     int64_t fContext = 0LL;
     int32_t fField = 0;
     int32_t fStart = 0;
     int32_t fLimit = 0;
-    UCFPosConstraintType fConstraint = UCFPOS_CONSTRAINT_NONE;
-    UFieldCategory fCategory = UFIELD_CATEGORY_UNDEFINED;
+#ifndef U_HIDE_DRAFT_API
+    int32_t fCategory = UFIELD_CATEGORY_UNDEFINED;
+#else   /* U_HIDE_DRAFT_API */
+    int32_t fCategory = 0;
+#endif  /* U_HIDE_DRAFT_API */
+    int8_t fConstraint = 0;
 };
 
-
+// The following cannot have #ifndef U_HIDE_DRAFT_API because
+// class FormattedNumber (stable ICU 60) depends on it.
 /**
  * An abstract formatted value: a string with associated field attributes.
  * Many formatters format to classes implementing FormattedValue.
@@ -239,6 +253,7 @@ class U_I18N_API ConstrainedFieldPosition : public UMemory {
  */
 class U_I18N_API FormattedValue /* not : public UObject because this is an interface/mixin class */ {
   public:
+    /** @draft ICU 64 */
     virtual ~FormattedValue();
 
     /**
@@ -306,9 +321,12 @@ class U_I18N_API FormattedValue /* not : public UObject because this is an inter
      */
     virtual UBool nextPosition(ConstrainedFieldPosition& cfpos, UErrorCode& status) const = 0;
 };
-
+#endif  // U_FORCE_HIDE_DRAFT_API
 
 U_NAMESPACE_END
 
 #endif /* #if !UCONFIG_NO_FORMATTING */
+
+#endif /* U_SHOW_CPLUSPLUS_API */
+
 #endif // __FORMATTEDVALUE_H__

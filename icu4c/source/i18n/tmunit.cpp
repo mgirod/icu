@@ -95,7 +95,6 @@ TimeUnit::TimeUnit(TimeUnit::UTimeUnitFields timeUnitField) {
         break;
     default:
         UPRV_UNREACHABLE;
-        break;
     }
 }
 
@@ -103,7 +102,7 @@ TimeUnit::TimeUnit(const TimeUnit& other)
 :   MeasureUnit(other), fTimeUnitField(other.fTimeUnitField) {
 }
 
-UObject* 
+TimeUnit* 
 TimeUnit::clone() const {
     return new TimeUnit(*this);
 }

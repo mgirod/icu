@@ -5,6 +5,7 @@ package com.ibm.icu.dev.test.format;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.math.BigDecimal;
 import java.text.AttributedCharacterIterator;
@@ -16,7 +17,7 @@ import java.util.Set;
 import org.junit.Test;
 
 import com.ibm.icu.text.ConstrainedFieldPosition;
-import com.ibm.icu.text.ConstrainedFieldPosition.ConstraintType;
+import com.ibm.icu.text.DateFormat;
 import com.ibm.icu.text.FormattedValue;
 import com.ibm.icu.text.NumberFormat;
 
@@ -30,8 +31,7 @@ public class FormattedValueTest {
         assertAllPartsEqual(
             "basic",
             cfpos,
-            ConstraintType.NONE,
-            Object.class,
+            15,
             null,
             null,
             0,
@@ -47,10 +47,20 @@ public class FormattedValueTest {
         assertAllPartsEqual(
             "setters 1",
             cfpos,
-            ConstraintType.FIELD,
-            Object.class,
+            10,
             NumberFormat.Field.COMPACT,
             null,
+            0,
+            0,
+            0L);
+
+        cfpos.constrainFieldAndValue(NumberFormat.Field.COMPACT, 42);
+        assertAllPartsEqual(
+            "setters 1.2",
+            cfpos,
+            8,
+            NumberFormat.Field.COMPACT,
+            42,
             0,
             0,
             0L);
@@ -59,8 +69,7 @@ public class FormattedValueTest {
         assertAllPartsEqual(
             "setters 1.5",
             cfpos,
-            ConstraintType.CLASS,
-            NumberFormat.Field.class,
+            11,
             null,
             null,
             0,
@@ -71,8 +80,7 @@ public class FormattedValueTest {
         assertAllPartsEqual(
             "setters 2",
             cfpos,
-            ConstraintType.CLASS,
-            NumberFormat.Field.class,
+            11,
             null,
             null,
             0,
@@ -83,8 +91,7 @@ public class FormattedValueTest {
         assertAllPartsEqual(
             "setters 3",
             cfpos,
-            ConstraintType.CLASS,
-            NumberFormat.Field.class,
+            11,
             NumberFormat.Field.COMPACT,
             BigDecimal.ONE,
             5,
@@ -95,8 +102,7 @@ public class FormattedValueTest {
         assertAllPartsEqual(
             "setters 4",
             cfpos,
-            ConstraintType.NONE,
-            Object.class,
+            15,
             null,
             null,
             0,
@@ -104,15 +110,40 @@ public class FormattedValueTest {
             0L);
     }
 
-    private void assertAllPartsEqual(String messagePrefix, ConstrainedFieldPosition cfpos, ConstraintType constraint,
-            Class<?> classConstraint, Field field, Object value, int start, int limit, long context) {
-        assertEquals(messagePrefix + ": constraint", constraint, cfpos.getConstraintType());
-        assertEquals(messagePrefix + ": class constraint", classConstraint, cfpos.getClassConstraint());
+    @Test
+    public void testIllegalArgumentException() {
+        ConstrainedFieldPosition cfpos = new ConstrainedFieldPosition();
+        try {
+            cfpos.matchesField(null, null);
+            fail("Expected an IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            // pass
+        }
+    }
+
+    private void assertAllPartsEqual(
+            String messagePrefix,
+            ConstrainedFieldPosition cfpos,
+            int matching,
+            Field field,
+            Object value,
+            int start,
+            int limit,
+            long context) {
         assertEquals(messagePrefix + ": field", field, cfpos.getField());
         assertEquals(messagePrefix + ": field value", value, cfpos.getFieldValue());
         assertEquals(messagePrefix + ": start", start, cfpos.getStart());
         assertEquals(messagePrefix + ": limit", limit, cfpos.getLimit());
         assertEquals(messagePrefix + ": context", context, cfpos.getInt64IterationContext());
+
+        assertEquals(messagePrefix + ": integer field",
+            ((matching & 1) != 0), cfpos.matchesField(NumberFormat.Field.INTEGER, null));
+        assertEquals(messagePrefix + ": compact field",
+            ((matching & 2) != 0), cfpos.matchesField(NumberFormat.Field.COMPACT, null));
+        assertEquals(messagePrefix + ": date field",
+            ((matching & 4) != 0), cfpos.matchesField(DateFormat.Field.AM_PM, null));
+        assertEquals(messagePrefix + ": compact field with value",
+            ((matching & 8) != 0), cfpos.matchesField(NumberFormat.Field.COMPACT, 42));
     }
 
     public static void checkFormattedValue(String message, FormattedValue fv, String expectedString,
@@ -128,7 +159,7 @@ public class FormattedValueTest {
         String baseMessage = message + ": " + fv.toString() + ": ";
 
         // Check the String and CharSequence
-        assertEquals(baseMessage + "string", expectedString, fv.toString());
+        assertEquals(baseMessage + " string", expectedString, fv.toString());
         assertCharSequenceEquals(expectedString, fv);
 
         // Check the AttributedCharacterIterator
@@ -144,6 +175,7 @@ public class FormattedValueTest {
                 Format.Field expectedField = (Format.Field) cas[0];
                 int expectedBeginIndex = (Integer) cas[1];
                 int expectedEndIndex = (Integer) cas[2];
+                Object expectedValue = cas.length == 4 ? cas[3] : expectedField;
                 if (expectedBeginIndex > i || expectedEndIndex <= i) {
                     // Field position does not overlap with the current character
                     continue;
@@ -155,11 +187,14 @@ public class FormattedValueTest {
                         allAttributes.contains(expectedField));
                 int actualBeginIndex = fpi.getRunStart(expectedField);
                 int actualEndIndex = fpi.getRunLimit(expectedField);
+                Object actualValue = fpi.getAttribute(expectedField);
                 assertEquals(baseMessage + expectedField + " begin @" + i, expectedBeginIndex, actualBeginIndex);
                 assertEquals(baseMessage + expectedField + " end @" + i, expectedEndIndex, actualEndIndex);
+                assertEquals(baseMessage + expectedField + " value @" + i, expectedValue, actualValue);
                 attributesRemaining--;
             }
-            assertEquals(baseMessage + "Should have looked at every field", 0, attributesRemaining);
+            assertEquals(baseMessage + "Should have looked at every field: " + i + ": " + currentAttributes,
+                    0, attributesRemaining);
         }
         assertEquals(baseMessage + "Should have looked at every character", stringLength, i);
 
@@ -171,12 +206,15 @@ public class FormattedValueTest {
             Format.Field expectedField = (Format.Field) cas[0];
             int expectedStart = (Integer) cas[1];
             int expectedLimit = (Integer) cas[2];
+            Object expectedValue = cas.length == 4 ? cas[3] : null;
             assertEquals(baseMessage + "field " + i, expectedField, cfpos.getField());
             assertEquals(baseMessage + "start " + i, expectedStart, cfpos.getStart());
             assertEquals(baseMessage + "limit " + i, expectedLimit, cfpos.getLimit());
+            assertEquals(baseMessage + "value " + i, expectedValue, cfpos.getFieldValue());
             i++;
         }
-        assertFalse(baseMessage + "after loop", fv.nextPosition(cfpos));
+        boolean afterLoopResult = fv.nextPosition(cfpos);
+        assertFalse(baseMessage + "after loop: " + cfpos, afterLoopResult);
 
         // Check nextPosition constrained over each class one at a time
         for (Class<?> classConstraint : uniqueFieldClasses) {
@@ -191,12 +229,15 @@ public class FormattedValueTest {
                 Format.Field expectedField = (Format.Field) cas[0];
                 int expectedStart = (Integer) cas[1];
                 int expectedLimit = (Integer) cas[2];
+                Object expectedValue = cas.length == 4 ? cas[3] : null;
                 assertEquals(baseMessage + "field " + i, expectedField, cfpos.getField());
                 assertEquals(baseMessage + "start " + i, expectedStart, cfpos.getStart());
                 assertEquals(baseMessage + "limit " + i, expectedLimit, cfpos.getLimit());
+                assertEquals(baseMessage + "value " + i, expectedValue, cfpos.getFieldValue());
                 i++;
             }
-            assertFalse(baseMessage + "after loop", fv.nextPosition(cfpos));
+            afterLoopResult = fv.nextPosition(cfpos);
+            assertFalse(baseMessage + "after loop: " + cfpos, afterLoopResult);
         }
 
         // Check nextPosition constrained over an unrelated class
@@ -217,12 +258,15 @@ public class FormattedValueTest {
                 Format.Field expectedField = (Format.Field) cas[0];
                 int expectedStart = (Integer) cas[1];
                 int expectedLimit = (Integer) cas[2];
+                Object expectedValue = cas.length == 4 ? cas[3] : null;
                 assertEquals(baseMessage + "field " + i, expectedField, cfpos.getField());
                 assertEquals(baseMessage + "start " + i, expectedStart, cfpos.getStart());
                 assertEquals(baseMessage + "limit " + i, expectedLimit, cfpos.getLimit());
+                assertEquals(baseMessage + "value " + i, expectedValue, cfpos.getFieldValue());
                 i++;
             }
-            assertFalse(baseMessage + "after loop", fv.nextPosition(cfpos));
+            afterLoopResult = fv.nextPosition(cfpos);
+            assertFalse(baseMessage + "after loop: " + cfpos, afterLoopResult);
         }
     }
 

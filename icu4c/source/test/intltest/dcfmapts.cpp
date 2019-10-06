@@ -95,6 +95,12 @@ void IntlTestDecimalFormatAPI::runIndexedTest( int32_t index, UBool exec, const 
                testErrorCode();
             }
             break;
+         case 9: name = "testInvalidObject";
+            if(exec) {
+                logln((UnicodeString) "testInvalidObject ---");
+                testInvalidObject();
+            }
+            break;
        default: name = ""; break;
     }
 }
@@ -447,9 +453,10 @@ void IntlTestDecimalFormatAPI::testAPI(/*char *par*/)
 void IntlTestDecimalFormatAPI::TestCurrencyPluralInfo(){
     UErrorCode status = U_ZERO_ERROR;
 
-    CurrencyPluralInfo *cpi = new CurrencyPluralInfo(status);
+    LocalPointer<CurrencyPluralInfo>cpi(new CurrencyPluralInfo(status), status);
     if(U_FAILURE(status)) {
         errln((UnicodeString)"ERROR: CurrencyPluralInfo(UErrorCode) could not be created");
+        return;
     }
 
     CurrencyPluralInfo cpi1 = *cpi;
@@ -473,19 +480,18 @@ void IntlTestDecimalFormatAPI::TestCurrencyPluralInfo(){
         errln((UnicodeString)"ERROR: CurrencyPluralInfo::setPluralRules");
     }
 
-    DecimalFormat *df = new DecimalFormat(status);
+    LocalPointer<DecimalFormat>df(new DecimalFormat(status));
     if(U_FAILURE(status)) {
         errcheckln(status, "ERROR: Could not create DecimalFormat - %s", u_errorName(status));
         return;
     }
 
-    df->adoptCurrencyPluralInfo(cpi);
+    df->adoptCurrencyPluralInfo(cpi.orphan());
 
     df->getCurrencyPluralInfo();
 
     df->setCurrencyPluralInfo(cpi1);
 
-    delete df;
 }
 
 void IntlTestDecimalFormatAPI::testRounding(/*char *par*/)
@@ -636,14 +642,15 @@ void IntlTestDecimalFormatAPI::TestScale()
 }
 
 
-#define ASSERT_EQUAL(expect, actual) { \
+#define ASSERT_EQUAL(expect, actual) UPRV_BLOCK_MACRO_BEGIN { \
     /* ICU-20080: Use temporary variables to avoid strange compiler behaviour \
        (with the nice side-effect of avoiding repeated function calls too). */ \
     auto lhs = (expect); \
     auto rhs = (actual); \
     char tmp[200]; \
     sprintf(tmp, "(%g==%g)", (double)lhs, (double)rhs); \
-    assertTrue(tmp, (lhs==rhs), FALSE, TRUE, __FILE__, __LINE__); }
+    assertTrue(tmp, (lhs==rhs), FALSE, TRUE, __FILE__, __LINE__); \
+} UPRV_BLOCK_MACRO_END
 
 #if defined(_MSC_VER)
 // Ignore the noisy warning 4805 (comparisons between int and bool) in the function below as we use the ICU TRUE/FALSE macros
@@ -1077,7 +1084,7 @@ void IntlTestDecimalFormatAPI::testErrorCode() {
     }
 
     // Try each DecimalFormat method with an error code parameter, verifying that
-    //  an input error is not altered.
+    //  an input error is not altered, and that no segmentation faults occur.
 
     status = U_INTERNAL_PROGRAM_ERROR;
     DecimalFormat dfBogus(status);
@@ -1137,6 +1144,244 @@ void IntlTestDecimalFormatAPI::testErrorCode() {
         status = U_INTERNAL_PROGRAM_ERROR;
         df->setCurrencyUsage(UCURR_USAGE_CASH, &status);
         assertEquals(WHERE, U_INTERNAL_PROGRAM_ERROR, status);
+    }
+}
+
+void IntlTestDecimalFormatAPI::testInvalidObject() {
+    {
+        UErrorCode status = U_INTERNAL_PROGRAM_ERROR;
+        DecimalFormat dfBogus(status);
+        assertEquals(WHERE, U_INTERNAL_PROGRAM_ERROR, status);
+
+        status = U_ZERO_ERROR;
+        DecimalFormat dfGood(status);
+        assertSuccess(WHERE, status);
+
+        // An invalid object should not be equal to a valid object.
+        // This also tests that no segmentation fault occurs in the comparison operator due
+        // to any dangling/nullptr pointers. (ICU-20381).
+        assertTrue(WHERE, dfGood != dfBogus);
+
+        status = U_MEMORY_ALLOCATION_ERROR;
+        DecimalFormat dfBogus2(status);
+        assertEquals(WHERE, U_MEMORY_ALLOCATION_ERROR, status);
+
+        // Two invalid objects should not be equal.
+        // (Also verify that nullptr isn't t dereferenced in the comparision operator.)
+        assertTrue(WHERE, dfBogus != dfBogus2);
+
+        // Verify the comparison operator works for two valid objects.
+        status = U_ZERO_ERROR;
+        DecimalFormat dfGood2(status);
+        assertSuccess(WHERE, status);
+        assertTrue(WHERE, dfGood == dfGood2);
+
+        // Verify that the assignment operator sets the object to an invalid state, and
+        // that no segmentation fault occurs due to any dangling/nullptr pointers.
+        status = U_INTERNAL_PROGRAM_ERROR;
+        DecimalFormat dfAssignmentBogus = DecimalFormat(status);
+        // Verify comparison for the assigned object.
+        assertTrue(WHERE, dfAssignmentBogus != dfGood);
+        assertTrue(WHERE, dfAssignmentBogus != dfGood2);
+        assertTrue(WHERE, dfAssignmentBogus != dfBogus);
+
+        // Verify that cloning our original invalid object gives nullptr.
+        auto dfBogusClone = dfBogus.clone();
+        assertTrue(WHERE,  dfBogusClone == nullptr);
+        // Verify that cloning our assigned invalid object gives nullptr.
+        auto dfBogusClone2 = dfAssignmentBogus.clone();
+        assertTrue(WHERE, dfBogusClone2 == nullptr);
+
+        // Verify copy constructing from an invalid object is also invalid.
+        DecimalFormat dfCopy(dfBogus);
+        assertTrue(WHERE, dfCopy != dfGood);
+        assertTrue(WHERE, dfCopy != dfGood2);
+        assertTrue(WHERE, dfCopy != dfBogus);
+        DecimalFormat dfCopyAssign = dfBogus;
+        assertTrue(WHERE, dfCopyAssign != dfGood);
+        assertTrue(WHERE, dfCopyAssign != dfGood2);
+        assertTrue(WHERE, dfCopyAssign != dfBogus);
+        auto dfBogusCopyClone1 = dfCopy.clone();
+        auto dfBogusCopyClone2 = dfCopyAssign.clone();
+        assertTrue(WHERE, dfBogusCopyClone1 == nullptr);
+        assertTrue(WHERE, dfBogusCopyClone2 == nullptr);
+    }
+
+    {
+        // Try each DecimalFormat class method that lacks an error code parameter, verifying
+        // we don't crash (segmentation fault) on invalid objects.
+
+        UErrorCode status = U_ZERO_ERROR;
+        const UnicodeString pattern(u"0.###E0");
+        UParseError pe;
+        DecimalFormatSymbols symbols(Locale::getUS(), status);
+        assertSuccess(WHERE, status);
+        CurrencyPluralInfo currencyPI(status);
+        assertSuccess(WHERE, status);
+
+        status = U_INTERNAL_PROGRAM_ERROR;
+        DecimalFormat dfBogus1(status);
+        assertEquals(WHERE, U_INTERNAL_PROGRAM_ERROR, status);
+
+        status = U_INTERNAL_PROGRAM_ERROR;
+        DecimalFormat dfBogus2(pattern, status);
+        assertEquals(WHERE, U_INTERNAL_PROGRAM_ERROR, status);
+
+        status = U_INTERNAL_PROGRAM_ERROR;
+        DecimalFormat dfBogus3(pattern, new DecimalFormatSymbols(symbols), status);
+        assertEquals(WHERE, U_INTERNAL_PROGRAM_ERROR, status);
+
+        status = U_INTERNAL_PROGRAM_ERROR;
+        DecimalFormat dfBogus4(pattern, new DecimalFormatSymbols(symbols), UNumberFormatStyle::UNUM_CURRENCY, status);
+        assertEquals(WHERE, U_INTERNAL_PROGRAM_ERROR, status);
+
+        status = U_INTERNAL_PROGRAM_ERROR;
+        DecimalFormat dfBogus5(pattern, new DecimalFormatSymbols(symbols), pe, status);
+        assertEquals(WHERE, U_INTERNAL_PROGRAM_ERROR, status);
+
+        for (DecimalFormat *df : {&dfBogus1, &dfBogus2, &dfBogus3, &dfBogus4, &dfBogus5})
+        {
+            df->setGroupingUsed(true);
+
+            df->setParseIntegerOnly(false);
+
+            df->setLenient(true);
+
+            auto dfClone = df->clone();
+            assertTrue(WHERE, dfClone == nullptr);
+
+            UnicodeString dest;
+            FieldPosition fp;
+            df->format(1.2, dest, fp);
+            df->format(static_cast<int32_t>(1234), dest, fp);
+            df->format(static_cast<int64_t>(1234), dest, fp);
+
+            UnicodeString text("-1,234.00");
+            Formattable result;
+            ParsePosition pos(0);
+            df->parse(text, result, pos);
+
+            CurrencyAmount* ca = df->parseCurrency(text, pos);
+            assertTrue(WHERE, ca == nullptr);
+
+            const DecimalFormatSymbols* dfs = df->getDecimalFormatSymbols();
+            assertTrue(WHERE, dfs == nullptr);
+
+            df->adoptDecimalFormatSymbols(nullptr);
+
+            df->setDecimalFormatSymbols(symbols);
+
+            const CurrencyPluralInfo* cpi = df->getCurrencyPluralInfo();
+            assertTrue(WHERE, cpi == nullptr);
+            
+            df->adoptCurrencyPluralInfo(nullptr);
+
+            df->setCurrencyPluralInfo(currencyPI);
+
+            UnicodeString prefix("-123");
+            df->getPositivePrefix(dest);
+            df->setPositivePrefix(prefix);
+            df->getNegativePrefix(dest);
+            df->setNegativePrefix(prefix);
+            df->getPositiveSuffix(dest);
+            df->setPositiveSuffix(prefix);
+            df->getNegativeSuffix(dest);
+            df->setNegativeSuffix(prefix);
+
+            df->isSignAlwaysShown();
+
+            df->setSignAlwaysShown(true);
+
+            df->getMultiplier();
+            df->setMultiplier(10);
+            
+            df->getMultiplierScale();
+            df->setMultiplierScale(2);
+
+            df->getRoundingIncrement();
+            df->setRoundingIncrement(1.2);
+
+            df->getRoundingMode();
+            df->setRoundingMode(DecimalFormat::ERoundingMode::kRoundDown);
+
+            df->getFormatWidth();
+            df->setFormatWidth(0);
+
+            UnicodeString pad(" ");
+            df->getPadCharacterString();
+            df->setPadCharacter(pad);
+
+            df->getPadPosition();
+            df->setPadPosition(DecimalFormat::EPadPosition::kPadBeforePrefix);
+
+            df->isScientificNotation();
+            df->setScientificNotation(false);
+
+            df->getMinimumExponentDigits();
+            df->setMinimumExponentDigits(1);
+
+            df->isExponentSignAlwaysShown();
+            df->setExponentSignAlwaysShown(true);
+
+            df->getGroupingSize();
+            df->setGroupingSize(3);
+
+            df->getSecondaryGroupingSize();
+            df->setSecondaryGroupingSize(-1);
+
+            df->getMinimumGroupingDigits();
+            df->setMinimumGroupingDigits(-1);
+
+            df->isDecimalSeparatorAlwaysShown();
+            df->setDecimalSeparatorAlwaysShown(true);
+
+            df->isDecimalPatternMatchRequired();
+            df->setDecimalPatternMatchRequired(false);
+
+            df->isParseNoExponent();
+            df->setParseNoExponent(true);
+
+            df->isParseCaseSensitive();
+            df->setParseCaseSensitive(false);
+
+            df->isFormatFailIfMoreThanMaxDigits();
+            df->setFormatFailIfMoreThanMaxDigits(true);
+
+            df->toPattern(dest);
+            df->toLocalizedPattern(dest);
+
+            df->setMaximumIntegerDigits(10);
+            df->setMinimumIntegerDigits(0);
+
+            df->setMaximumFractionDigits(2);
+            df->setMinimumFractionDigits(0);
+
+            df->getMinimumSignificantDigits();
+            df->setMinimumSignificantDigits(0);
+
+            df->getMaximumSignificantDigits();
+            df->setMaximumSignificantDigits(5);
+
+            df->areSignificantDigitsUsed();
+            df->setSignificantDigitsUsed(true);
+
+            df->setCurrency(u"USD");
+            
+            df->getCurrencyUsage();
+
+            const number::LocalizedNumberFormatter* lnf = df->toNumberFormatter(status);
+            assertEquals("toNumberFormatter should return nullptr",
+                (int64_t) nullptr, (int64_t) lnf);
+
+            // Should not crash when chaining to error code enabled methods on the LNF
+            lnf->formatInt(1, status);
+            lnf->formatDouble(1.0, status);
+            lnf->formatDecimal("1", status);
+            lnf->toFormat(status);
+            lnf->toSkeleton(status);
+            lnf->copyErrorTo(status);
+        }
+
     }
 }
 

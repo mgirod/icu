@@ -8,6 +8,7 @@
 #include "charstr.h"
 #include <cstdarg>
 #include <cmath>
+#include <memory>
 #include "unicode/unum.h"
 #include "unicode/numberformatter.h"
 #include "number_asformat.h"
@@ -31,6 +32,7 @@ NumberFormatterApiTest::NumberFormatterApiTest(UErrorCode& status)
           CAD(u"CAD", status),
           ESP(u"ESP", status),
           PTE(u"PTE", status),
+          RON(u"RON", status),
           FRENCH_SYMBOLS(Locale::getFrench(), status),
           SWISS_SYMBOLS(Locale("de-CH"), status),
           MYANMAR_SYMBOLS(Locale("my"), status) {
@@ -69,6 +71,10 @@ void NumberFormatterApiTest::runIndexedTest(int32_t index, UBool exec, const cha
         TESTCASE_AUTO(unitCompoundMeasure);
         TESTCASE_AUTO(unitCurrency);
         TESTCASE_AUTO(unitPercent);
+        if (!quick) {
+            // Slow test: run in exhaustive mode only
+            TESTCASE_AUTO(percentParity);
+        }
         TESTCASE_AUTO(roundingFraction);
         TESTCASE_AUTO(roundingFigures);
         TESTCASE_AUTO(roundingFractionFigures);
@@ -80,17 +86,25 @@ void NumberFormatterApiTest::runIndexedTest(int32_t index, UBool exec, const cha
         // TODO: Add this method if currency symbols override support is added.
         //TESTCASE_AUTO(symbolsOverride);
         TESTCASE_AUTO(sign);
+        TESTCASE_AUTO(signCoverage);
         TESTCASE_AUTO(decimal);
         TESTCASE_AUTO(scale);
         TESTCASE_AUTO(locale);
+        TESTCASE_AUTO(skeletonUserGuideExamples);
         TESTCASE_AUTO(formatTypes);
         TESTCASE_AUTO(fieldPositionLogic);
         TESTCASE_AUTO(fieldPositionCoverage);
         TESTCASE_AUTO(toFormat);
         TESTCASE_AUTO(errors);
-        TESTCASE_AUTO(validRanges);
+        if (!quick) {
+            // Slow test: run in exhaustive mode only
+            // (somewhat slow to check all permutations of settings)
+            TESTCASE_AUTO(validRanges);
+        }
         TESTCASE_AUTO(copyMove);
         TESTCASE_AUTO(localPointerCAPI);
+        TESTCASE_AUTO(toObject);
+        TESTCASE_AUTO(toDecimalNumber);
     TESTCASE_AUTO_END;
 }
 
@@ -204,6 +218,22 @@ void NumberFormatterApiTest::notationScientific() {
             Locale::getEnglish(),
             -1000000,
             u"-1E6");
+
+    assertFormatSingle(
+            u"Scientific Infinity",
+            u"scientific",
+            NumberFormatter::with().notation(Notation::scientific()),
+            Locale::getEnglish(),
+            -uprv_getInfinity(),
+            u"-∞");
+
+    assertFormatSingle(
+            u"Scientific NaN",
+            u"scientific",
+            NumberFormatter::with().notation(Notation::scientific()),
+            Locale::getEnglish(),
+            uprv_getNaN(),
+            u"NaN");
 }
 
 void NumberFormatterApiTest::notationCompact() {
@@ -420,6 +450,22 @@ void NumberFormatterApiTest::notationCompact() {
             1e7,
             u"1000\u842C");
 
+    assertFormatSingle(
+            u"Compact Infinity",
+            u"compact-short",
+            NumberFormatter::with().notation(Notation::compactShort()),
+            Locale::getEnglish(),
+            -uprv_getInfinity(),
+            u"-∞");
+
+    assertFormatSingle(
+            u"Compact NaN",
+            u"compact-short",
+            NumberFormatter::with().notation(Notation::compactShort()),
+            Locale::getEnglish(),
+            uprv_getNaN(),
+            u"NaN");
+
     // NOTE: There is no API for compact custom data in C++
     // and thus no "Compact Somali No Figure" test
 }
@@ -428,7 +474,7 @@ void NumberFormatterApiTest::unitMeasure() {
     assertFormatDescending(
             u"Meters Short and unit() method",
             u"measure-unit/length-meter",
-            NumberFormatter::with().unit(METER),
+            NumberFormatter::with().unit(MeasureUnit::getMeter()),
             Locale::getEnglish(),
             u"87,650 m",
             u"8,765 m",
@@ -525,6 +571,15 @@ void NumberFormatterApiTest::unitMeasure() {
             5.43,
             u"5.43 m²");
 
+    // Try accessing a narrow unit directly from root.
+    assertFormatSingle(
+            u"Interesting Data Fallback 4",
+            u"measure-unit/area-square-meter unit-width-narrow",
+            NumberFormatter::with().unit(SQUARE_METER).unitWidth(UNumberUnitWidth::UNUM_UNIT_WIDTH_NARROW),
+            Locale::createFromName("root"),
+            5.43,
+            u"5.43 m²");
+
     // es_US has "{0}°" for unitsNarrow/temperature/FAHRENHEIT.
     // NOTE: This example is in the documentation.
     assertFormatSingle(
@@ -560,6 +615,15 @@ void NumberFormatterApiTest::unitMeasure() {
             Locale("es-MX"),
             1,
             u"kelvin");
+
+    assertFormatSingle(
+            u"Person unit not in short form",
+            u"measure-unit/duration-year-person unit-width-full-name",
+            NumberFormatter::with().unit(MeasureUnit::getYearPerson())
+                    .unitWidth(UNumberUnitWidth::UNUM_UNIT_WIDTH_FULL_NAME),
+            Locale("es-MX"),
+            5,
+            u"5 a\u00F1os");
 }
 
 void NumberFormatterApiTest::unitCompoundMeasure() {
@@ -751,7 +815,7 @@ void NumberFormatterApiTest::unitCurrency() {
             NumberFormatter::with().unit(PTE).unitWidth(UNUM_UNIT_WIDTH_NARROW),
             Locale("pt-PT"),
             444444.55,
-            u"444,444$55 PTE");
+            u"444,444$55 \u200B");
 
     assertFormatSingle(
             u"Currency-dependent symbols (Test ISO Code)",
@@ -760,6 +824,14 @@ void NumberFormatterApiTest::unitCurrency() {
             Locale("pt-PT"),
             444444.55,
             u"444,444$55 PTE");
+
+    assertFormatSingle(
+            u"Plural form depending on visible digits (ICU-20499)",
+            u"currency/RON unit-width-full-name",
+            NumberFormatter::with().unit(RON).unitWidth(UNUM_UNIT_WIDTH_FULL_NAME),
+            Locale("ro-RO"),
+            24,
+            u"24,00 lei românești");
 }
 
 void NumberFormatterApiTest::unitPercent() {
@@ -808,6 +880,33 @@ void NumberFormatterApiTest::unitPercent() {
             Locale::getEnglish(),
             -98.7654321,
             u"-98.765432%");
+}
+
+void NumberFormatterApiTest::percentParity() {
+    IcuTestErrorCode status(*this, "percentParity");
+    UnlocalizedNumberFormatter uNoUnitPercent = NumberFormatter::with().unit(NoUnit::percent());
+    UnlocalizedNumberFormatter uNoUnitPermille = NumberFormatter::with().unit(NoUnit::permille());
+    UnlocalizedNumberFormatter uMeasurePercent = NumberFormatter::with().unit(MeasureUnit::getPercent());
+    UnlocalizedNumberFormatter uMeasurePermille = NumberFormatter::with().unit(MeasureUnit::getPermille());
+
+    int32_t localeCount;
+    auto locales = Locale::getAvailableLocales(localeCount);
+    for (int32_t i=0; i<localeCount; i++) {
+        auto& locale = locales[i];
+        UnicodeString sNoUnitPercent = uNoUnitPercent.locale(locale)
+            .formatDouble(50, status).toString(status);
+        UnicodeString sNoUnitPermille = uNoUnitPermille.locale(locale)
+            .formatDouble(50, status).toString(status);
+        UnicodeString sMeasurePercent = uMeasurePercent.locale(locale)
+            .formatDouble(50, status).toString(status);
+        UnicodeString sMeasurePermille = uMeasurePermille.locale(locale)
+            .formatDouble(50, status).toString(status);
+
+        assertEquals(u"Percent, locale " + UnicodeString(locale.getName()),
+            sNoUnitPercent, sMeasurePercent);
+        assertEquals(u"Permille, locale " + UnicodeString(locale.getName()),
+            sNoUnitPermille, sMeasurePermille);
+    }
 }
 
 void NumberFormatterApiTest::roundingFraction() {
@@ -1281,17 +1380,18 @@ void NumberFormatterApiTest::grouping() {
             u"8.765",
             u"0");
 
-    // NOTE: Hungarian is interesting because it has minimumGroupingDigits=4 in locale data
+    // NOTE: Polish is interesting because it has minimumGroupingDigits=2 in locale data
+    // (Most locales have either 1 or 2)
     // If this test breaks due to data changes, find another locale that has minimumGroupingDigits.
     assertFormatDescendingBig(
-            u"Hungarian Grouping",
+            u"Polish Grouping",
             u"group-auto",
             NumberFormatter::with().grouping(UNUM_GROUPING_AUTO),
-            Locale("hu"),
+            Locale("pl"),
             u"87 650 000",
             u"8 765 000",
-            u"876500",
-            u"87650",
+            u"876 500",
+            u"87 650",
             u"8765",
             u"876,5",
             u"87,65",
@@ -1299,14 +1399,14 @@ void NumberFormatterApiTest::grouping() {
             u"0");
 
     assertFormatDescendingBig(
-            u"Hungarian Grouping, Min 2",
+            u"Polish Grouping, Min 2",
             u"group-min2",
             NumberFormatter::with().grouping(UNUM_GROUPING_MIN2),
-            Locale("hu"),
+            Locale("pl"),
             u"87 650 000",
             u"8 765 000",
-            u"876500",
-            u"87650",
+            u"876 500",
+            u"87 650",
             u"8765",
             u"876,5",
             u"87,65",
@@ -1314,10 +1414,10 @@ void NumberFormatterApiTest::grouping() {
             u"0");
 
     assertFormatDescendingBig(
-            u"Hungarian Grouping, Always",
+            u"Polish Grouping, Always",
             u"group-on-aligned",
             NumberFormatter::with().grouping(UNUM_GROUPING_ON_ALIGNED),
-            Locale("hu"),
+            Locale("pl"),
             u"87 650 000",
             u"8 765 000",
             u"876 500",
@@ -1593,6 +1693,31 @@ void NumberFormatterApiTest::integerWidth() {
             u"00.08765",
             u"00.008765",
             u"00");
+
+    assertFormatSingle(
+            u"Integer Width Remove All A",
+            u"integer-width/00",
+            NumberFormatter::with().integerWidth(IntegerWidth::zeroFillTo(2).truncateAt(2)),
+            "en",
+            2500,
+            u"00");
+
+    assertFormatSingle(
+            u"Integer Width Remove All B",
+            u"integer-width/00",
+            NumberFormatter::with().integerWidth(IntegerWidth::zeroFillTo(2).truncateAt(2)),
+            "en",
+            25000,
+            u"00");
+
+    assertFormatSingle(
+            u"Integer Width Remove All B, Bytes Mode",
+            u"integer-width/00",
+            NumberFormatter::with().integerWidth(IntegerWidth::zeroFillTo(2).truncateAt(2)),
+            "en",
+            // Note: this double produces all 17 significant digits
+            10000000000000002000.0,
+            u"00");
 }
 
 void NumberFormatterApiTest::symbols() {
@@ -1714,7 +1839,7 @@ void NumberFormatterApiTest::symbols() {
             NumberFormatter::withLocale(Locale("ar@numbers=arab")).adoptSymbols(new NumberingSystem(LATN))
                     .unit(USD)
                     .formatDouble(12345.67, status)
-                    .toString());
+                    .toString(status));
 
     DecimalFormatSymbols symbols = SWISS_SYMBOLS;
     UnlocalizedNumberFormatter f = NumberFormatter::with().symbols(symbols);
@@ -1979,6 +2104,39 @@ void NumberFormatterApiTest::sign() {
             u"-444,444.00 US dollars");
 }
 
+void NumberFormatterApiTest::signCoverage() {
+    // https://unicode-org.atlassian.net/browse/ICU-20708
+    IcuTestErrorCode status(*this, "signCoverage");
+    const struct TestCase {
+        UNumberSignDisplay sign;
+        const char16_t* expectedStrings[8];
+    } cases[] = {
+        { UNUM_SIGN_AUTO, {        u"-∞", u"-1", u"-0",  u"0",  u"1",  u"∞",  u"NaN", u"-NaN" } },
+        { UNUM_SIGN_ALWAYS, {      u"-∞", u"-1", u"-0", u"+0", u"+1", u"+∞", u"+NaN", u"-NaN" } },
+        { UNUM_SIGN_NEVER, {        u"∞",  u"1",  u"0",  u"0",  u"1",  u"∞",  u"NaN",  u"NaN" } },
+        { UNUM_SIGN_EXCEPT_ZERO, { u"-∞", u"-1", u"-0",  u"0", u"+1", u"+∞",  u"NaN", u"-NaN" } },
+    };
+    double negNaN = std::copysign(uprv_getNaN(), -0.0);
+    const double inputs[] = {
+        -uprv_getInfinity(), -1, -0.0, 0, 1, uprv_getInfinity(), uprv_getNaN(), negNaN
+    };
+    for (auto& cas : cases) {
+        auto sign = cas.sign;
+        for (int32_t i = 0; i < UPRV_LENGTHOF(inputs); i++) {
+            auto input = inputs[i];
+            auto expected = cas.expectedStrings[i];
+            auto actual = NumberFormatter::with()
+                .sign(sign)
+                .locale(Locale::getUS())
+                .formatDouble(input, status)
+                .toString(status);
+            assertEquals(
+                DoubleToUnicodeString(input) + " " + Int64ToUnicodeString(sign),
+                expected, actual);
+        }
+    }
+}
+
 void NumberFormatterApiTest::decimal() {
     assertFormatDescending(
             u"Decimal Default",
@@ -2139,8 +2297,49 @@ void NumberFormatterApiTest::locale() {
     // Coverage for the locale setters.
     UErrorCode status = U_ZERO_ERROR;
     UnicodeString actual = NumberFormatter::withLocale(Locale::getFrench()).formatInt(1234, status)
-            .toString();
+            .toString(status);
     assertEquals("Locale withLocale()", u"1\u202f234", actual);
+}
+
+void NumberFormatterApiTest::skeletonUserGuideExamples() {
+    IcuTestErrorCode status(*this, "skeletonUserGuideExamples");
+
+    // Test the skeleton examples in userguide/format_parse/numbers/skeletons.md
+    struct TestCase {
+        const char16_t* skeleton;
+        double input;
+        const char16_t* expected;
+    } cases[] = {
+        {u"percent", 25, u"25%"},
+        {u".00", 25, u"25.00"},
+        {u"percent .00", 25, u"25.00%"},
+        {u"scale/100", 0.3, u"30"},
+        {u"percent scale/100", 0.3, u"30%"},
+        {u"measure-unit/length-meter", 5, u"5 m"},
+        {u"measure-unit/length-meter unit-width-full-name", 5, u"5 meters"},
+        {u"currency/CAD", 10, u"CA$10.00"},
+        {u"currency/CAD unit-width-narrow", 10, u"$10.00"},
+        {u"compact-short", 5000, u"5K"},
+        {u"compact-long", 5000, u"5 thousand"},
+        {u"compact-short currency/CAD", 5000, u"CA$5K"},
+        {u"", 5000, u"5,000"},
+        {u"group-min2", 5000, u"5000"},
+        {u"group-min2", 15000, u"15,000"},
+        {u"sign-always", 60, u"+60"},
+        {u"sign-always", 0, u"+0"},
+        {u"sign-except-zero", 60, u"+60"},
+        {u"sign-except-zero", 0, u"0"},
+        {u"sign-accounting currency/CAD", -40, u"(CA$40.00)"}
+    };
+
+    for (const auto& cas : cases) {
+        status.setScope(cas.skeleton);
+        FormattedNumber actual = NumberFormatter::forSkeleton(cas.skeleton, status)
+            .locale("en-US")
+            .formatDouble(cas.input, status);
+        assertEquals(cas.skeleton, cas.expected, actual.toTempString(status));
+        status.errIfFailureAndReset();
+    }
 }
 
 void NumberFormatterApiTest::formatTypes() {
@@ -2148,20 +2347,20 @@ void NumberFormatterApiTest::formatTypes() {
     LocalizedNumberFormatter formatter = NumberFormatter::withLocale(Locale::getEnglish());
 
     // Double
-    assertEquals("Format double", "514.23", formatter.formatDouble(514.23, status).toString());
+    assertEquals("Format double", "514.23", formatter.formatDouble(514.23, status).toString(status));
 
     // Int64
-    assertEquals("Format int64", "51,423", formatter.formatDouble(51423L, status).toString());
+    assertEquals("Format int64", "51,423", formatter.formatDouble(51423L, status).toString(status));
 
     // decNumber
-    UnicodeString actual = formatter.formatDecimal("98765432123456789E1", status).toString();
+    UnicodeString actual = formatter.formatDecimal("98765432123456789E1", status).toString(status);
     assertEquals("Format decNumber", u"987,654,321,234,567,890", actual);
 
     // Also test proper DecimalQuantity bytes storage when all digits are in the fraction.
     // The number needs to have exactly 40 digits, which is the size of the default buffer.
     // (issue discovered by the address sanitizer in C++)
     static const char* str = "0.009876543210987654321098765432109876543211";
-    actual = formatter.precision(Precision::unlimited()).formatDecimal(str, status).toString();
+    actual = formatter.precision(Precision::unlimited()).formatDecimal(str, status).toString(status);
     assertEquals("Format decNumber to 40 digits", str, actual);
 }
 
@@ -2452,6 +2651,30 @@ void NumberFormatterApiTest::fieldPositionCoverage() {
     }
 
     {
+        const char16_t* message = u"Currency long name fields";
+        FormattedNumber result = assertFormatSingle(
+                message,
+                u"currency/USD unit-width-full-name",
+                NumberFormatter::with().unit(USD)
+                    .unitWidth(UNumberUnitWidth::UNUM_UNIT_WIDTH_FULL_NAME),
+                "en",
+                12345,
+                u"12,345.00 US dollars");
+        static const UFieldPosition expectedFieldPositions[] = {
+                // field, begin index, end index
+                {UNUM_GROUPING_SEPARATOR_FIELD, 2, 3},
+                {UNUM_INTEGER_FIELD, 0, 6},
+                {UNUM_DECIMAL_SEPARATOR_FIELD, 6, 7},
+                {UNUM_FRACTION_FIELD, 7, 9},
+                {UNUM_CURRENCY_FIELD, 10, 20}};
+        assertNumberFieldPositions(
+                message,
+                result,
+                expectedFieldPositions,
+                UPRV_LENGTHOF(expectedFieldPositions));
+    }
+
+    {
         const char16_t* message = u"Compact with measure unit fields";
         FormattedNumber result = assertFormatSingle(
                 message,
@@ -2550,7 +2773,7 @@ void NumberFormatterApiTest::errors() {
     // FieldPosition
     status = U_ZERO_ERROR;
     FieldPosition fp;
-    fn.populateFieldPosition(fp, status);
+    fn.nextFieldPosition(fp, status);
     assertEquals(
             "Should fail on FieldPosition terminal method with correct error code",
             U_NUMBER_ARG_OUTOFBOUNDS_ERROR,
@@ -2559,7 +2782,7 @@ void NumberFormatterApiTest::errors() {
     // FieldPositionIterator
     status = U_ZERO_ERROR;
     FieldPositionIterator fpi;
-    fn.populateFieldPositionIterator(fpi, status);
+    fn.getAllFieldPositions(fpi, status);
     assertEquals(
             "Should fail on FieldPositoinIterator terminal method with correct error code",
             U_NUMBER_ARG_OUTOFBOUNDS_ERROR,
@@ -2595,15 +2818,10 @@ void NumberFormatterApiTest::errors() {
 }
 
 void NumberFormatterApiTest::validRanges() {
-    if (quick) {
-        // Do not run this test except in exhaustive mode.
-        // (somewhat slow to check all permutations of settings)
-        return;
-    }
 
 #define EXPECTED_MAX_INT_FRAC_SIG 999
 
-#define VALID_RANGE_ASSERT(status, method, lowerBound, argument) { \
+#define VALID_RANGE_ASSERT(status, method, lowerBound, argument) UPRV_BLOCK_MACRO_BEGIN { \
     UErrorCode expectedStatus = ((lowerBound <= argument) && (argument <= EXPECTED_MAX_INT_FRAC_SIG)) \
         ? U_ZERO_ERROR \
         : U_NUMBER_ARG_OUTOFBOUNDS_ERROR; \
@@ -2612,17 +2830,17 @@ void NumberFormatterApiTest::validRanges() {
             + Int64ToUnicodeString(argument), \
         expectedStatus, \
         status); \
-}
+} UPRV_BLOCK_MACRO_END
 
-#define VALID_RANGE_ONEARG(setting, method, lowerBound) { \
+#define VALID_RANGE_ONEARG(setting, method, lowerBound) UPRV_BLOCK_MACRO_BEGIN { \
     for (int32_t argument = -2; argument <= EXPECTED_MAX_INT_FRAC_SIG + 2; argument++) { \
         UErrorCode status = U_ZERO_ERROR; \
         NumberFormatter::with().setting(method(argument)).copyErrorTo(status); \
         VALID_RANGE_ASSERT(status, method, lowerBound, argument); \
     } \
-}
+} UPRV_BLOCK_MACRO_END
 
-#define VALID_RANGE_TWOARGS(setting, method, lowerBound) { \
+#define VALID_RANGE_TWOARGS(setting, method, lowerBound) UPRV_BLOCK_MACRO_BEGIN { \
     for (int32_t argument = -2; argument <= EXPECTED_MAX_INT_FRAC_SIG + 2; argument++) { \
         UErrorCode status = U_ZERO_ERROR; \
         /* Pass EXPECTED_MAX_INT_FRAC_SIG as the second argument so arg1 <= arg2 in expected cases */ \
@@ -2638,18 +2856,18 @@ void NumberFormatterApiTest::validRanges() {
             U_NUMBER_ARG_OUTOFBOUNDS_ERROR, \
             status); \
     } \
-}
+} UPRV_BLOCK_MACRO_END
 
-    VALID_RANGE_ONEARG(rounding, Precision::fixedFraction, 0);
-    VALID_RANGE_ONEARG(rounding, Precision::minFraction, 0);
-    VALID_RANGE_ONEARG(rounding, Precision::maxFraction, 0);
-    VALID_RANGE_TWOARGS(rounding, Precision::minMaxFraction, 0);
-    VALID_RANGE_ONEARG(rounding, Precision::fixedSignificantDigits, 1);
-    VALID_RANGE_ONEARG(rounding, Precision::minSignificantDigits, 1);
-    VALID_RANGE_ONEARG(rounding, Precision::maxSignificantDigits, 1);
-    VALID_RANGE_TWOARGS(rounding, Precision::minMaxSignificantDigits, 1);
-    VALID_RANGE_ONEARG(rounding, Precision::fixedFraction(1).withMinDigits, 1);
-    VALID_RANGE_ONEARG(rounding, Precision::fixedFraction(1).withMaxDigits, 1);
+    VALID_RANGE_ONEARG(precision, Precision::fixedFraction, 0);
+    VALID_RANGE_ONEARG(precision, Precision::minFraction, 0);
+    VALID_RANGE_ONEARG(precision, Precision::maxFraction, 0);
+    VALID_RANGE_TWOARGS(precision, Precision::minMaxFraction, 0);
+    VALID_RANGE_ONEARG(precision, Precision::fixedSignificantDigits, 1);
+    VALID_RANGE_ONEARG(precision, Precision::minSignificantDigits, 1);
+    VALID_RANGE_ONEARG(precision, Precision::maxSignificantDigits, 1);
+    VALID_RANGE_TWOARGS(precision, Precision::minMaxSignificantDigits, 1);
+    VALID_RANGE_ONEARG(precision, Precision::fixedFraction(1).withMinDigits, 1);
+    VALID_RANGE_ONEARG(precision, Precision::fixedFraction(1).withMaxDigits, 1);
     VALID_RANGE_ONEARG(notation, Notation::scientific().withMinExponentDigits, 1);
     VALID_RANGE_ONEARG(integerWidth, IntegerWidth::zeroFillTo, 0);
     VALID_RANGE_ONEARG(integerWidth, IntegerWidth::zeroFillTo(0).truncateAt, -1);
@@ -2660,33 +2878,33 @@ void NumberFormatterApiTest::copyMove() {
 
     // Default constructors
     LocalizedNumberFormatter l1;
-    assertEquals("Initial behavior", u"10", l1.formatInt(10, status).toString(), true);
+    assertEquals("Initial behavior", u"10", l1.formatInt(10, status).toString(status), true);
     if (status.errDataIfFailureAndReset()) { return; }
     assertEquals("Initial call count", 1, l1.getCallCount());
     assertTrue("Initial compiled", l1.getCompiled() == nullptr);
 
     // Setup
     l1 = NumberFormatter::withLocale("en").unit(NoUnit::percent()).threshold(3);
-    assertEquals("Initial behavior", u"10%", l1.formatInt(10, status).toString());
+    assertEquals("Initial behavior", u"10%", l1.formatInt(10, status).toString(status));
     assertEquals("Initial call count", 1, l1.getCallCount());
     assertTrue("Initial compiled", l1.getCompiled() == nullptr);
     l1.formatInt(123, status);
     assertEquals("Still not compiled", 2, l1.getCallCount());
     assertTrue("Still not compiled", l1.getCompiled() == nullptr);
     l1.formatInt(123, status);
-    assertEquals("Compiled", u"10%", l1.formatInt(10, status).toString());
+    assertEquals("Compiled", u"10%", l1.formatInt(10, status).toString(status));
     assertEquals("Compiled", INT32_MIN, l1.getCallCount());
     assertTrue("Compiled", l1.getCompiled() != nullptr);
 
     // Copy constructor
     LocalizedNumberFormatter l2 = l1;
-    assertEquals("[constructor] Copy behavior", u"10%", l2.formatInt(10, status).toString());
+    assertEquals("[constructor] Copy behavior", u"10%", l2.formatInt(10, status).toString(status));
     assertEquals("[constructor] Copy should not have compiled state", 1, l2.getCallCount());
     assertTrue("[constructor] Copy should not have compiled state", l2.getCompiled() == nullptr);
 
     // Move constructor
     LocalizedNumberFormatter l3 = std::move(l1);
-    assertEquals("[constructor] Move behavior", u"10%", l3.formatInt(10, status).toString());
+    assertEquals("[constructor] Move behavior", u"10%", l3.formatInt(10, status).toString(status));
     assertEquals("[constructor] Move *should* have compiled state", INT32_MIN, l3.getCallCount());
     assertTrue("[constructor] Move *should* have compiled state", l3.getCompiled() != nullptr);
     assertEquals("[constructor] Source should be reset after move", 0, l1.getCallCount());
@@ -2705,13 +2923,13 @@ void NumberFormatterApiTest::copyMove() {
 
     // Copy assignment
     l1 = l3;
-    assertEquals("[assignment] Copy behavior", u"10%", l1.formatInt(10, status).toString());
+    assertEquals("[assignment] Copy behavior", u"10%", l1.formatInt(10, status).toString(status));
     assertEquals("[assignment] Copy should not have compiled state", 1, l1.getCallCount());
     assertTrue("[assignment] Copy should not have compiled state", l1.getCompiled() == nullptr);
 
     // Move assignment
     l2 = std::move(l3);
-    assertEquals("[assignment] Move behavior", u"10%", l2.formatInt(10, status).toString());
+    assertEquals("[assignment] Move behavior", u"10%", l2.formatInt(10, status).toString(status));
     assertEquals("[assignment] Move *should* have compiled state", INT32_MIN, l2.getCallCount());
     assertTrue("[assignment] Move *should* have compiled state", l2.getCompiled() != nullptr);
     assertEquals("[assignment] Source should be reset after move", 0, l3.getCallCount());
@@ -2719,22 +2937,22 @@ void NumberFormatterApiTest::copyMove() {
 
     // Coverage tests for UnlocalizedNumberFormatter
     UnlocalizedNumberFormatter u1;
-    assertEquals("Default behavior", u"10", u1.locale("en").formatInt(10, status).toString());
+    assertEquals("Default behavior", u"10", u1.locale("en").formatInt(10, status).toString(status));
     u1 = u1.unit(NoUnit::percent());
-    assertEquals("Copy assignment", u"10%", u1.locale("en").formatInt(10, status).toString());
+    assertEquals("Copy assignment", u"10%", u1.locale("en").formatInt(10, status).toString(status));
     UnlocalizedNumberFormatter u2 = u1;
-    assertEquals("Copy constructor", u"10%", u2.locale("en").formatInt(10, status).toString());
+    assertEquals("Copy constructor", u"10%", u2.locale("en").formatInt(10, status).toString(status));
     UnlocalizedNumberFormatter u3 = std::move(u1);
-    assertEquals("Move constructor", u"10%", u3.locale("en").formatInt(10, status).toString());
+    assertEquals("Move constructor", u"10%", u3.locale("en").formatInt(10, status).toString(status));
     u1 = NumberFormatter::with();
     u1 = std::move(u2);
-    assertEquals("Move assignment", u"10%", u1.locale("en").formatInt(10, status).toString());
+    assertEquals("Move assignment", u"10%", u1.locale("en").formatInt(10, status).toString(status));
 
     // FormattedNumber move operators
     FormattedNumber result = l1.formatInt(10, status);
-    assertEquals("FormattedNumber move constructor", u"10%", result.toString());
+    assertEquals("FormattedNumber move constructor", u"10%", result.toString(status));
     result = l1.formatInt(20, status);
-    assertEquals("FormattedNumber move assignment", u"20%", result.toString());
+    assertEquals("FormattedNumber move assignment", u"20%", result.toString(status));
 }
 
 void NumberFormatterApiTest::localPointerCAPI() {
@@ -2759,6 +2977,76 @@ void NumberFormatterApiTest::localPointerCAPI() {
     // No need to do any cleanup since we are using LocalPointer.
 }
 
+void NumberFormatterApiTest::toObject() {
+    IcuTestErrorCode status(*this, "toObject");
+
+    // const lvalue version
+    {
+        LocalizedNumberFormatter lnf = NumberFormatter::withLocale("en")
+                .precision(Precision::fixedFraction(2));
+        LocalPointer<LocalizedNumberFormatter> lnf2(lnf.clone());
+        assertFalse("should create successfully, const lvalue", lnf2.isNull());
+        assertEquals("object API test, const lvalue", u"1,000.00",
+            lnf2->formatDouble(1000, status).toString(status));
+    }
+
+    // rvalue reference version
+    {
+        LocalPointer<LocalizedNumberFormatter> lnf(
+            NumberFormatter::withLocale("en")
+                .precision(Precision::fixedFraction(2))
+                .clone());
+        assertFalse("should create successfully, rvalue reference", lnf.isNull());
+        assertEquals("object API test, rvalue reference", u"1,000.00",
+            lnf->formatDouble(1000, status).toString(status));
+    }
+
+    // to std::unique_ptr via constructor
+    {
+        std::unique_ptr<LocalizedNumberFormatter> lnf(
+            NumberFormatter::withLocale("en")
+                .precision(Precision::fixedFraction(2))
+                .clone());
+        assertTrue("should create successfully, unique_ptr", static_cast<bool>(lnf));
+        assertEquals("object API test, unique_ptr", u"1,000.00",
+            lnf->formatDouble(1000, status).toString(status));
+    }
+
+    // to std::unique_ptr via assignment
+    {
+        std::unique_ptr<LocalizedNumberFormatter> lnf =
+            NumberFormatter::withLocale("en")
+                .precision(Precision::fixedFraction(2))
+                .clone();
+        assertTrue("should create successfully, unique_ptr B", static_cast<bool>(lnf));
+        assertEquals("object API test, unique_ptr B", u"1,000.00",
+            lnf->formatDouble(1000, status).toString(status));
+    }
+
+    // to LocalPointer via assignment
+    {
+        LocalPointer<UnlocalizedNumberFormatter> f =
+            NumberFormatter::with().clone();
+    }
+
+    // make sure no memory leaks
+    {
+        NumberFormatter::with().clone();
+    }
+}
+
+void NumberFormatterApiTest::toDecimalNumber() {
+    IcuTestErrorCode status(*this, "toDecimalNumber");
+    FormattedNumber fn = NumberFormatter::withLocale("bn-BD")
+        .scale(Scale::powerOfTen(2))
+        .precision(Precision::maxSignificantDigits(5))
+        .formatDouble(9.87654321e12, status);
+    assertEquals("Should have expected localized string result",
+        u"৯৮,৭৬,৫০,০০,০০,০০,০০০", fn.toString(status));
+    assertEquals(u"Should have expected toDecimalNumber string result",
+        "9.8765E+14", fn.toDecimalNumber<std::string>(status).c_str());
+}
+
 
 void NumberFormatterApiTest::assertFormatDescending(const char16_t* umessage, const char16_t* uskeleton,
                                                     const UnlocalizedNumberFormatter& f, Locale locale,
@@ -2777,10 +3065,10 @@ void NumberFormatterApiTest::assertFormatDescending(const char16_t* umessage, co
         double d = inputs[i];
         UnicodeString expected = va_arg(args, const char16_t*);
         expecteds[i] = expected;
-        UnicodeString actual1 = l1.formatDouble(d, status).toString();
+        UnicodeString actual1 = l1.formatDouble(d, status).toString(status);
         assertSuccess(message + u": Unsafe Path: " + caseNumber, status);
         assertEquals(message + u": Unsafe Path: " + caseNumber, expected, actual1);
-        UnicodeString actual2 = l2.formatDouble(d, status).toString();
+        UnicodeString actual2 = l2.formatDouble(d, status).toString(status);
         assertSuccess(message + u": Safe Path: " + caseNumber, status);
         assertEquals(message + u": Safe Path: " + caseNumber, expected, actual2);
     }
@@ -2793,7 +3081,7 @@ void NumberFormatterApiTest::assertFormatDescending(const char16_t* umessage, co
         LocalizedNumberFormatter l3 = NumberFormatter::forSkeleton(normalized, status).locale(locale);
         for (int32_t i = 0; i < 9; i++) {
             double d = inputs[i];
-            UnicodeString actual3 = l3.formatDouble(d, status).toString();
+            UnicodeString actual3 = l3.formatDouble(d, status).toString(status);
             assertEquals(message + ": Skeleton Path: '" + normalized + "': " + d, expecteds[i], actual3);
         }
     } else {
@@ -2818,10 +3106,10 @@ void NumberFormatterApiTest::assertFormatDescendingBig(const char16_t* umessage,
         double d = inputs[i];
         UnicodeString expected = va_arg(args, const char16_t*);
         expecteds[i] = expected;
-        UnicodeString actual1 = l1.formatDouble(d, status).toString();
+        UnicodeString actual1 = l1.formatDouble(d, status).toString(status);
         assertSuccess(message + u": Unsafe Path: " + caseNumber, status);
         assertEquals(message + u": Unsafe Path: " + caseNumber, expected, actual1);
-        UnicodeString actual2 = l2.formatDouble(d, status).toString();
+        UnicodeString actual2 = l2.formatDouble(d, status).toString(status);
         assertSuccess(message + u": Safe Path: " + caseNumber, status);
         assertEquals(message + u": Safe Path: " + caseNumber, expected, actual2);
     }
@@ -2834,7 +3122,7 @@ void NumberFormatterApiTest::assertFormatDescendingBig(const char16_t* umessage,
         LocalizedNumberFormatter l3 = NumberFormatter::forSkeleton(normalized, status).locale(locale);
         for (int32_t i = 0; i < 9; i++) {
             double d = inputs[i];
-            UnicodeString actual3 = l3.formatDouble(d, status).toString();
+            UnicodeString actual3 = l3.formatDouble(d, status).toString(status);
             assertEquals(message + ": Skeleton Path: '" + normalized + "': " + d, expecteds[i], actual3);
         }
     } else {
@@ -2852,10 +3140,10 @@ NumberFormatterApiTest::assertFormatSingle(const char16_t* umessage, const char1
     IcuTestErrorCode status(*this, "assertFormatSingle");
     status.setScope(message);
     FormattedNumber result1 = l1.formatDouble(input, status);
-    UnicodeString actual1 = result1.toString();
+    UnicodeString actual1 = result1.toString(status);
     assertSuccess(message + u": Unsafe Path", status);
     assertEquals(message + u": Unsafe Path", expected, actual1);
-    UnicodeString actual2 = l2.formatDouble(input, status).toString();
+    UnicodeString actual2 = l2.formatDouble(input, status).toString(status);
     assertSuccess(message + u": Safe Path", status);
     assertEquals(message + u": Safe Path", expected, actual2);
     if (uskeleton != nullptr) { // if null, skeleton is declared as undefined.
@@ -2865,7 +3153,7 @@ NumberFormatterApiTest::assertFormatSingle(const char16_t* umessage, const char1
         UnicodeString normalized = NumberFormatter::forSkeleton(skeleton, status).toSkeleton(status);
         assertEquals(message + ": Skeleton:", normalized, f.toSkeleton(status));
         LocalizedNumberFormatter l3 = NumberFormatter::forSkeleton(normalized, status).locale(locale);
-        UnicodeString actual3 = l3.formatDouble(input, status).toString();
+        UnicodeString actual3 = l3.formatDouble(input, status).toString(status);
         assertEquals(message + ": Skeleton Path: '" + normalized + "': " + input, expected, actual3);
     } else {
         assertUndefinedSkeleton(f);
@@ -2895,15 +3183,6 @@ void NumberFormatterApiTest::assertNumberFieldPositions(
         UFIELD_CATEGORY_NUMBER,
         expectedFieldPositions,
         length);
-
-    // Check no field positions in an unrelated category
-    checkFormattedValue(
-        message,
-        static_cast<const FormattedValue&>(formattedNumber),
-        formattedNumber.toString(status),
-        UFIELD_CATEGORY_DATE,
-        nullptr,
-        0);
 
     // Check FormattedNumber-specific functions
     UnicodeString baseMessage = UnicodeString(message) + u": " + formattedNumber.toString(status) + u": ";

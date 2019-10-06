@@ -141,6 +141,11 @@ public abstract class DecimalQuantity_AbstractBCD implements DecimalQuantity {
             return;
         }
 
+        if (maxInt <= scale) {
+            setBcdToZero();
+            return;
+        }
+
         int magnitude = getMagnitude();
         if (maxInt <= magnitude) {
             popFromLeft(magnitude - maxInt + 1);
@@ -178,7 +183,7 @@ public abstract class DecimalQuantity_AbstractBCD implements DecimalQuantity {
 
     @Override
     public void multiplyBy(BigDecimal multiplicand) {
-        if (isInfinite() || isZero() || isNaN()) {
+        if (isZeroish()) {
             return;
         }
         BigDecimal temp = toBigDecimal();
@@ -205,6 +210,8 @@ public abstract class DecimalQuantity_AbstractBCD implements DecimalQuantity {
         if (precision != 0) {
             scale = Utility.addExact(scale, delta);
             origDelta = Utility.addExact(origDelta, delta);
+            // Make sure that precision + scale won't overflow, either
+            Utility.addExact(scale, precision);
         }
     }
 
@@ -297,7 +304,7 @@ public abstract class DecimalQuantity_AbstractBCD implements DecimalQuantity {
 
     @Override
     public int signum() {
-        return isNegative() ? -1 : isZero() ? 0 : 1;
+        return isNegative() ? -1 : (isZeroish() && !isInfinite()) ? 0 : 1;
     }
 
     @Override
@@ -311,7 +318,7 @@ public abstract class DecimalQuantity_AbstractBCD implements DecimalQuantity {
     }
 
     @Override
-    public boolean isZero() {
+    public boolean isZeroish() {
         return precision == 0;
     }
 
@@ -391,8 +398,10 @@ public abstract class DecimalQuantity_AbstractBCD implements DecimalQuantity {
     public void setToDouble(double n) {
         setBcdToZero();
         flags = 0;
-        // Double.compare() handles +0.0 vs -0.0
-        if (Double.compare(n, 0.0) < 0) {
+        // The sign bit is the top bit in both double and long, so we can
+        // get the long bits for the double and compare it to zero to check
+        // the sign of the double.
+        if (Double.doubleToRawLongBits(n) < 0) {
             flags |= NEGATIVE_FLAG;
             n = -n;
         }
@@ -612,7 +621,10 @@ public abstract class DecimalQuantity_AbstractBCD implements DecimalQuantity {
      * Returns whether or not a Long can fully represent the value stored in this DecimalQuantity.
      */
     public boolean fitsInLong() {
-        if (isZero()) {
+        if (isInfinite() || isNaN()) {
+            return false;
+        }
+        if (isZeroish()) {
             return true;
         }
         if (scale < 0) {

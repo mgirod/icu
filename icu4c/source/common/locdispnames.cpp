@@ -374,7 +374,12 @@ _getDisplayNameForComponent(const char *locale,
         return 0;
     }
     if(length==0) {
-        return u_terminateUChars(dest, destCapacity, 0, pErrorCode);
+        // For the display name, we treat this as unknown language (ICU-20273).
+        if (getter == uloc_getLanguage) {
+            uprv_strcpy(localeBuffer, "und");
+        } else {
+            return u_terminateUChars(dest, destCapacity, 0, pErrorCode);
+        }
     }
 
     root = tag == _kCountries ? U_ICUDATA_REGION : U_ICUDATA_LANG;

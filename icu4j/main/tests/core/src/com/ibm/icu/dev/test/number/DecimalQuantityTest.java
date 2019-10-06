@@ -863,6 +863,7 @@ import com.ibm.icu.dev.impl.number.DecimalQuantity_64BitBCD;
 import com.ibm.icu.dev.impl.number.DecimalQuantity_ByteArrayBCD;
 import com.ibm.icu.dev.impl.number.DecimalQuantity_SimpleStorage;
 import com.ibm.icu.dev.test.TestFmwk;
+import com.ibm.icu.impl.FormattedStringBuilder;
 import com.ibm.icu.impl.number.DecimalFormatProperties;
 import com.ibm.icu.impl.number.DecimalQuantity;
 import com.ibm.icu.impl.number.DecimalQuantity_DualStorageBCD;
@@ -1079,8 +1080,12 @@ public class DecimalQuantityTest extends TestFmwk {
         for (LocalizedNumberFormatter format : formats) {
             DecimalQuantity q0 = rq0.createCopy();
             DecimalQuantity q1 = rq1.createCopy();
-            String s1 = format.format(q0).toString();
-            String s2 = format.format(q1).toString();
+            FormattedStringBuilder nsb1 = new FormattedStringBuilder();
+            FormattedStringBuilder nsb2 = new FormattedStringBuilder();
+            format.formatImpl(q0, nsb1);
+            format.formatImpl(q1, nsb2);
+            String s1 = nsb1.toString();
+            String s2 = nsb2.toString();
             assertEquals("Different output from formatter (" + q0 + ", " + q1 + ")", s1, s2);
         }
     }

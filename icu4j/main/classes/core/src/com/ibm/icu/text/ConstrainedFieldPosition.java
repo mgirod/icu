@@ -3,6 +3,7 @@
 package com.ibm.icu.text;
 
 import java.text.Format.Field;
+import java.util.Objects;
 
 /**
  * Represents a span of a string containing a given field.
@@ -23,49 +24,45 @@ public class ConstrainedFieldPosition {
      * Represents the type of constraint for ConstrainedFieldPosition.
      *
      * Constraints are used to control the behavior of iteration in FormattedValue.
-     *
-     * @draft ICU 64
-     * @provisional This API might change or be removed in a future release.
      */
-    public enum ConstraintType {
+    private enum ConstraintType {
         /**
          * Represents the lack of a constraint.
          *
-         * This is the return value of {@link #getConstraintType}
+         * This is the value of fConstraint
          * if no "constrain" methods were called.
-         *
-         * @draft ICU 64
-         * @provisional This API might change or be removed in a future release.
          */
         NONE,
 
         /**
          * Represents that the field class is constrained.
-         * Use {@link #getClassConstraint} to access the class.
          *
-         * This is the return value of @link #getConstraintType}
+         * This is the value of fConstraint
          * after {@link #constrainClass} is called.
          *
-         * FormattedValue implementations should not change the field when this constraint is active.
-         *
-         * @draft ICU 64
-         * @provisional This API might change or be removed in a future release.
+         * FormattedValue implementations should not change the field class when this constraint is active.
          */
         CLASS,
 
         /**
          * Represents that the field is constrained.
-         * Use {@link #getField} to access the field.
          *
-         * This is the return value of @link #getConstraintType}
+         * This is the value of fConstraint
          * after {@link #constrainField} is called.
          *
          * FormattedValue implementations should not change the field when this constraint is active.
-         *
-         * @draft ICU 64
-         * @provisional This API might change or be removed in a future release.
          */
-        FIELD
+        FIELD,
+
+        /**
+         * Represents that the field value is constrained.
+         *
+         * This is the value of fConstraint
+         * after {@link #constrainField} is called.
+         *
+         * FormattedValue implementations should not change the field or value with this constraint.
+         */
+        VALUE
     };
 
     private ConstraintType fConstraint;
@@ -111,7 +108,7 @@ public class ConstrainedFieldPosition {
      * Sets a constraint on the field.
      *
      * When this instance of ConstrainedFieldPosition is passed to {@link FormattedValue#nextPosition}, positions are
-     * skipped unless they have the given category and field.
+     * skipped unless they have the given field.
      *
      * Any previously set constraints are cleared.
      *
@@ -140,6 +137,7 @@ public class ConstrainedFieldPosition {
         fConstraint = ConstraintType.FIELD;
         fClassConstraint = Object.class;
         fField = field;
+        fValue = null;
     }
 
     /**
@@ -172,35 +170,44 @@ public class ConstrainedFieldPosition {
         fConstraint = ConstraintType.CLASS;
         fClassConstraint = classConstraint;
         fField = null;
+        fValue = null;
     }
 
     /**
-     * Gets the currently active constraint.
+     * Sets a constraint on field and field value.
      *
-     * @return The currently active constraint type.
-     * @draft ICU 64
-     * @provisional This API might change or be removed in a future release.
-     */
-    public ConstraintType getConstraintType() {
-        return fConstraint;
-    }
-
-    /**
-     * Gets the class on which field positions are currently constrained.
+     * When this instance of ConstrainedFieldPosition is passed to {@link FormattedValue#nextPosition}, positions are
+     * skipped unless both the field and the field value are equal.
      *
-     * @return The class constraint from {@link #constrainClass}, or Object.class by default.
-     * @draft ICU 64
-     * @provisional This API might change or be removed in a future release.
+     * Any previously set constraints are cleared.
+     *
+     * For example, to find the span a date interval corresponding to the first date:
+     *
+     * <pre>
+     * ConstrainedFieldPosition cfpos;
+     * cfpos.constrainFieldAndValue(DateIntervalFormat.SpanField.DATE_INTERVAL_SPAN, 0);
+     * while (fmtval.nextPosition(cfpos)) {
+     *   // handle the span of the first date in the date interval
+     * }
+     * </pre>
+     *
+     * @param field The field to fix when iterating.
+     * @param fieldValue The field value to fix when iterating.
+     * @internal ICU 64 technology preview
+     * @deprecated This API is for technology preview and might be changed or removed in a future release.
      */
-    public Class<?> getClassConstraint() {
-        return fClassConstraint;
+    @Deprecated
+    public void constrainFieldAndValue(Field field, Object fieldValue) {
+        fConstraint = ConstraintType.VALUE;
+        fClassConstraint = Object.class;
+        fField = field;
+        fValue = fieldValue;
     }
 
     /**
      * Gets the field for the current position.
      *
-     * If a field constraint was set, this function returns the constrained
-     * field. Otherwise, the return value is well-defined and non-null only after
+     * The return value is well-defined and non-null only after
      * FormattedValue#nextPosition returns TRUE.
      *
      * @return The field saved in the instance. See above for null conditions.
@@ -290,7 +297,7 @@ public class ConstrainedFieldPosition {
      * @param field
      *            The new field.
      * @param value
-     *            The new field value.
+     *            The new field value. Should be null if there is no value.
      * @param start
      *            The new inclusive start index.
      * @param limit
@@ -299,12 +306,51 @@ public class ConstrainedFieldPosition {
      * @provisional This API might change or be removed in a future release.
      */
     public void setState(Field field, Object value, int start, int limit) {
+        // Check matchesField only as an assertion (debug build)
+        assert matchesField(field, value);
+
         fField = field;
         fValue = value;
         fStart = start;
         fLimit = limit;
     }
 
+    /**
+     * Determines whether a given field and value should be included given the
+     * constraints.
+     *
+     * Intended to be used by FormattedValue implementations.
+     *
+     * @param field The field to test.
+     * @param fieldValue The field value to test. Should be null if there is no value.
+     * @return Whether the field should be included given the constraints.
+     * @draft ICU 64
+     * @provisional This API might change or be removed in a future release.
+     */
+    public boolean matchesField(Field field, Object fieldValue) {
+        if (field == null) {
+            throw new IllegalArgumentException("field must not be null");
+        }
+        switch (fConstraint) {
+        case NONE:
+            return true;
+        case CLASS:
+            return fClassConstraint.isAssignableFrom(field.getClass());
+        case FIELD:
+            return fField == field;
+        case VALUE:
+            // Note: Objects.equals is Android API level 19 and Java 1.7
+            return fField == field && Objects.equals(fValue, fieldValue);
+        default:
+            throw new AssertionError();
+        }
+    }
+
+    /**
+     * {@inheritDoc}
+     * @draft ICU 64
+     * @provisional This API might change or be removed in a future release.
+     */
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();

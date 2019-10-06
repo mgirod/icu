@@ -352,7 +352,7 @@ void ParsedPatternInfo::consumeIntegerFormat(UErrorCode& status) {
                 result.groupingSizes += 1;
                 result.integerNumerals += 1;
                 result.integerTotal += 1;
-                if (!result.rounding.isZero() || state.peek() != u'0') {
+                if (!result.rounding.isZeroish() || state.peek() != u'0') {
                     result.rounding.appendDigit(static_cast<int8_t>(state.peek() - u'0'), 0, true);
                 }
                 break;
@@ -532,7 +532,7 @@ PatternParser::patternInfoToProperties(DecimalFormatProperties& properties, Pars
         properties.roundingIncrement = 0.0;
         properties.minimumSignificantDigits = positive.integerAtSigns;
         properties.maximumSignificantDigits = positive.integerAtSigns + positive.integerTrailingHashSigns;
-    } else if (!positive.rounding.isZero()) {
+    } else if (!positive.rounding.isZeroish()) {
         if (!ignoreRounding) {
             properties.minimumFractionDigits = minFrac;
             properties.maximumFractionDigits = positive.fractionTotal;
@@ -644,6 +644,25 @@ PatternParser::patternInfoToProperties(DecimalFormatProperties& properties, Pars
 /// End PatternStringParser.java; begin PatternStringUtils.java ///
 ///////////////////////////////////////////////////////////////////
 
+// Determine whether a given roundingIncrement should be ignored for formatting
+// based on the current maxFrac value (maximum fraction digits). For example a
+// roundingIncrement of 0.01 should be ignored if maxFrac is 1, but not if maxFrac
+// is 2 or more. Note that roundingIncrements are rounded in significance, so
+// a roundingIncrement of 0.006 is treated like 0.01 for this determination, i.e.
+// it should not be ignored if maxFrac is 2 or more (but a roundingIncrement of
+// 0.005 is treated like 0.001 for significance). This is the reason for the
+// initial doubling below.
+// roundIncr must be non-zero.
+bool PatternStringUtils::ignoreRoundingIncrement(double roundIncr, int32_t maxFrac) {
+    if (maxFrac < 0) {
+        return false;
+    }
+    int32_t frac = 0;
+    roundIncr *= 2.0;
+    for (frac = 0; frac <= maxFrac && roundIncr <= 1.0; frac++, roundIncr *= 10.0);
+    return (frac > maxFrac);
+}
+
 UnicodeString PatternStringUtils::propertiesToPatternString(const DecimalFormatProperties& properties,
                                                             UErrorCode& status) {
     UnicodeString sb;
@@ -694,7 +713,7 @@ UnicodeString PatternStringUtils::propertiesToPatternString(const DecimalFormatP
         while (digitsString.length() < maxSig) {
             digitsString.append(u'#');
         }
-    } else if (roundingInterval != 0.0) {
+    } else if (roundingInterval != 0.0 && !ignoreRoundingIncrement(roundingInterval,maxFrac)) {
         // Rounding Interval.
         digitsStringScale = -roundingutils::doubleFractionLength(roundingInterval, nullptr);
         // TODO: Check for DoS here?
@@ -762,7 +781,7 @@ UnicodeString PatternStringUtils::propertiesToPatternString(const DecimalFormatP
     sb.append(affixes.getString(AffixPatternProvider::AFFIX_POS_SUFFIX));
 
     // Resolve Padding
-    if (paddingWidth != -1 && !paddingLocation.isNull()) {
+    if (paddingWidth > 0 && !paddingLocation.isNull()) {
         while (paddingWidth - sb.length() > 0) {
             sb.insert(afterPrefixPos, u'#');
             beforeSuffixPos++;
@@ -981,7 +1000,7 @@ PatternStringUtils::convertLocalized(const UnicodeString& input, const DecimalFo
 }
 
 void PatternStringUtils::patternInfoToStringBuilder(const AffixPatternProvider& patternInfo, bool isPrefix,
-                                                    int8_t signum, UNumberSignDisplay signDisplay,
+                                                    Signum signum, UNumberSignDisplay signDisplay,
                                                     StandardPlural::Form plural,
                                                     bool perMilleReplacesPercent, UnicodeString& output) {
 
@@ -995,6 +1014,7 @@ void PatternStringUtils::patternInfoToStringBuilder(const AffixPatternProvider& 
 
     // Should we use the affix from the negative subpattern? (If not, we will use the positive
     // subpattern.)
+    // TODO: Deal with signum
     bool useNegativeAffixPattern = patternInfo.hasNegativeSubpattern() && (
             signum == -1 || (patternInfo.negativeHasMinusSign() && plusReplacesMinusSign));
 

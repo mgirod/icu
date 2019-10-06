@@ -183,11 +183,11 @@ ro{
         MF{"Sfântul Martin"}
         MG{"Madagascar"}
         MH{"Insulele Marshall"}
-        MK{"Republica Macedonia"}
+        MK{"Macedonia de Nord"}
         ML{"Mali"}
         MM{"Myanmar (Birmania)"}
         MN{"Mongolia"}
-        MO{"R.A.S. Macao a Chinei"}
+        MO{"R.A.S. Macao, China"}
         MP{"Insulele Mariane de Nord"}
         MQ{"Martinica"}
         MR{"Mauritania"}
@@ -249,11 +249,11 @@ ro{
         SO{"Somalia"}
         SR{"Suriname"}
         SS{"Sudanul de Sud"}
-        ST{"Sao Tome și Principe"}
+        ST{"São Tomé și Príncipe"}
         SV{"El Salvador"}
         SX{"Sint-Maarten"}
         SY{"Siria"}
-        SZ{"Swaziland"}
+        SZ{"eSwatini"}
         TA{"Tristan da Cunha"}
         TC{"Insulele Turks și Caicos"}
         TD{"Ciad"}
@@ -287,6 +287,8 @@ ro{
         VU{"Vanuatu"}
         WF{"Wallis și Futuna"}
         WS{"Samoa"}
+        XA{"Pseudo-accente"}
+        XB{"Pseudo-Bidi"}
         XK{"Kosovo"}
         YE{"Yemen"}
         YT{"Mayotte"}
@@ -309,8 +311,8 @@ ro{
         CI{"Coasta de Fildeș"}
         CZ{"Republica Cehă"}
         FK{"Insulele Falkland (Insulele Malvine)"}
-        MK{"Republica Macedonia (FRIM)"}
+        SZ{"Swaziland"}
         TL{"Timorul de Est"}
     }
-    Version{"2.1.43.94"}
+    Version{"36"}
 }

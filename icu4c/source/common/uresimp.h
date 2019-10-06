@@ -67,6 +67,9 @@ struct UResourceBundle {
     char *fVersion;
     UResourceDataEntry *fTopLevelData; /* for getting the valid locale */
     char *fResPath; /* full path to the resource: "zh_TW/CollationElements/Sequence" */
+    // TODO(ICU-20769): Try to change the by-value fResData into a pointer,
+    // with the struct in only one place for each bundle.
+    // Also replace class ResourceDataValue.resData with a pResData pointer again.
     ResourceData fResData;
     char fResBuf[RES_BUFSIZE];
     int32_t fResPathLen;
@@ -106,19 +109,22 @@ U_NAMESPACE_BEGIN
  * @see LocalUResourceBundlePointer
  * @internal
  */
-class StackUResourceBundle {
+class U_COMMON_API StackUResourceBundle {
 public:
     // No heap allocation. Use only on the stack.
-    static void* U_EXPORT2 operator new(size_t) U_NO_THROW = delete;
-    static void* U_EXPORT2 operator new[](size_t) U_NO_THROW = delete;
+    static void* U_EXPORT2 operator new(size_t) U_NOEXCEPT = delete;
+    static void* U_EXPORT2 operator new[](size_t) U_NOEXCEPT = delete;
 #if U_HAVE_PLACEMENT_NEW
-    static void* U_EXPORT2 operator new(size_t, void*) U_NO_THROW = delete;
+    static void* U_EXPORT2 operator new(size_t, void*) U_NOEXCEPT = delete;
 #endif
 
     StackUResourceBundle();
     ~StackUResourceBundle();
 
     UResourceBundle* getAlias() { return &bundle; }
+
+    UResourceBundle& ref() { return bundle; }
+    const UResourceBundle& ref() const { return bundle; }
 
     StackUResourceBundle(const StackUResourceBundle&) = delete;
     StackUResourceBundle& operator=(const StackUResourceBundle&) = delete;
@@ -279,6 +285,11 @@ ures_getStringByKeyWithFallback(const UResourceBundle *resB,
 #ifdef __cplusplus
 
 U_CAPI void U_EXPORT2
+ures_getValueWithFallback(const UResourceBundle *bundle, const char *path,
+                          UResourceBundle *tempFillIn,
+                          icu::ResourceDataValue &value, UErrorCode &errorCode);
+
+U_CAPI void U_EXPORT2
 ures_getAllItemsWithFallback(const UResourceBundle *bundle, const char *path,
                              icu::ResourceSink &sink, UErrorCode &errorCode);
 
@@ -326,5 +337,28 @@ ures_getVersionNumberInternal(const UResourceBundle *resourceBundle);
 U_CAPI const char* U_EXPORT2 
 ures_getLocaleInternal(const UResourceBundle* resourceBundle, 
                UErrorCode* status);
+
+/**
+ * Same as ures_openDirect() but uses the fill-in parameter instead of allocating a new bundle.
+ * 
+ * @param r The existing UResourceBundle to fill in. If NULL then status will be
+ *          set to U_ILLEGAL_ARGUMENT_ERROR.
+ * @param packageName   The packageName and locale together point to an ICU udata object,
+ *                      as defined by <code> udata_open( packageName, "res", locale, err) </code>
+ *                      or equivalent.  Typically, packageName will refer to a (.dat) file, or to
+ *                      a package registered with udata_setAppData(). Using a full file or directory
+ *                      pathname for packageName is deprecated. If NULL, ICU data will be used.
+ * @param locale  specifies the locale for which we want to open the resource
+ *                if NULL, the default locale will be used. If strlen(locale) == 0
+ *                root locale will be used.
+ * @param status The error code.
+ * @see ures_openDirect
+ * @internal
+ */
+U_CAPI void U_EXPORT2
+ures_openDirectFillIn(UResourceBundle *r,
+                      const char *packageName,
+                      const char *locale,
+                      UErrorCode *status);
 
 #endif /*URESIMP_H*/

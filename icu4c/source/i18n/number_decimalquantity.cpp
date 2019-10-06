@@ -160,6 +160,11 @@ void DecimalQuantity::applyMaxInteger(int32_t maxInt) {
         return;
     }
 
+    if (maxInt <= scale) {
+        setBcdToZero();
+        return;
+    }
+
     int32_t magnitude = getMagnitude();
     if (maxInt <= magnitude) {
         popFromLeft(magnitude - maxInt + 1);
@@ -200,7 +205,7 @@ void DecimalQuantity::roundToIncrement(double roundingIncrement, RoundingMode ro
 }
 
 void DecimalQuantity::multiplyBy(const DecNum& multiplicand, UErrorCode& status) {
-    if (isInfinite() || isZero() || isNaN()) {
+    if (isZeroish()) {
         return;
     }
     // Convert to DecNum, multiply, and convert back.
@@ -213,7 +218,7 @@ void DecimalQuantity::multiplyBy(const DecNum& multiplicand, UErrorCode& status)
 }
 
 void DecimalQuantity::divideBy(const DecNum& divisor, UErrorCode& status) {
-    if (isInfinite() || isZero() || isNaN()) {
+    if (isZeroish()) {
         return;
     }
     // Convert to DecNum, multiply, and convert back.
@@ -313,8 +318,14 @@ bool DecimalQuantity::isNegative() const {
     return (flags & NEGATIVE_FLAG) != 0;
 }
 
-int8_t DecimalQuantity::signum() const {
-    return isNegative() ? -1 : isZero() ? 0 : 1;
+Signum DecimalQuantity::signum() const {
+    if (isNegative()) {
+        return SIGNUM_NEG;
+    } else if (isZeroish() && !isInfinite()) {
+        return SIGNUM_ZERO;
+    } else {
+        return SIGNUM_POS;
+    }
 }
 
 bool DecimalQuantity::isInfinite() const {
@@ -325,7 +336,7 @@ bool DecimalQuantity::isNaN() const {
     return (flags & NAN_FLAG) != 0;
 }
 
-bool DecimalQuantity::isZero() const {
+bool DecimalQuantity::isZeroish() const {
     return precision == 0;
 }
 
@@ -543,7 +554,10 @@ uint64_t DecimalQuantity::toFractionLong(bool includeTrailingZeros) const {
 }
 
 bool DecimalQuantity::fitsInLong(bool ignoreFraction) const {
-    if (isZero()) {
+    if (isInfinite() || isNaN()) {
+        return false;
+    }
+    if (isZeroish()) {
         return true;
     }
     if (scale < 0 && !ignoreFraction) {
@@ -983,6 +997,7 @@ void DecimalQuantity::shiftRight(int32_t numDigits) {
 }
 
 void DecimalQuantity::popFromLeft(int32_t numDigits) {
+    U_ASSERT(numDigits <= precision);
     if (usingBytes) {
         int i = precision - 1;
         for (; i >= precision - numDigits; i--) {

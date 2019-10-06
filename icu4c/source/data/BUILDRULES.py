@@ -5,12 +5,12 @@
 # TODO(ICU-20301): Remove this.
 from __future__ import print_function
 
-from distutils.sysconfig import parse_makefile
+from icutools.databuilder import *
+from icutools.databuilder import locale_dependencies
+from icutools.databuilder import utils
+from icutools.databuilder.request_types import *
 
-from buildtool import *
-from buildtool import utils
-from buildtool.request_types import *
-
+import os
 import sys
 
 
@@ -18,10 +18,11 @@ def generate(config, glob, common_vars):
     requests = []
 
     if len(glob("misc/*")) == 0:
-        print("Error: Cannot find data directory; please specify --glob_dir", file=sys.stderr)
+        print("Error: Cannot find data directory; please specify --src_dir", file=sys.stderr)
         exit(1)
 
     requests += generate_cnvalias(config, glob, common_vars)
+    requests += generate_ulayout(config, glob, common_vars)
     requests += generate_confusables(config, glob, common_vars)
     requests += generate_conversion_mappings(config, glob, common_vars)
     requests += generate_brkitr_brk(config, glob, common_vars)
@@ -29,6 +30,7 @@ def generate(config, glob, common_vars):
     requests += generate_brkitr_dictionaries(config, glob, common_vars)
     requests += generate_normalization(config, glob, common_vars)
     requests += generate_coll_ucadata(config, glob, common_vars)
+    requests += generate_full_unicore_data(config, glob, common_vars)
     requests += generate_unames(config, glob, common_vars)
     requests += generate_misc(config, glob, common_vars)
     requests += generate_curr_supplemental(config, glob, common_vars)
@@ -39,84 +41,69 @@ def generate(config, glob, common_vars):
     requests += generate_tree(config, glob, common_vars,
         "locales",
         None,
-        "resfiles.mk",
-        "GENRB_CLDR_VERSION",
-        "GENRB_SOURCE",
-        True,
+        "icu-locale-deprecates.xml",
+        config.use_pool_bundle,
         [])
 
     requests += generate_tree(config, glob, common_vars,
         "curr",
         "curr",
-        "resfiles.mk",
-        "CURR_CLDR_VERSION",
-        "CURR_SOURCE",
-        True,
+        "icu-locale-deprecates.xml",
+        config.use_pool_bundle,
         [])
 
     requests += generate_tree(config, glob, common_vars,
         "lang",
         "lang",
-        "resfiles.mk",
-        "LANG_CLDR_VERSION",
-        "LANG_SOURCE",
-        True,
+        "icu-locale-deprecates.xml",
+        config.use_pool_bundle,
         [])
 
     requests += generate_tree(config, glob, common_vars,
         "region",
         "region",
-        "resfiles.mk",
-        "REGION_CLDR_VERSION",
-        "REGION_SOURCE",
-        True,
+        "icu-locale-deprecates.xml",
+        config.use_pool_bundle,
         [])
 
     requests += generate_tree(config, glob, common_vars,
         "zone",
         "zone",
-        "resfiles.mk",
-        "ZONE_CLDR_VERSION",
-        "ZONE_SOURCE",
-        True,
+        "icu-locale-deprecates.xml",
+        config.use_pool_bundle,
         [])
 
     requests += generate_tree(config, glob, common_vars,
         "unit",
         "unit",
-        "resfiles.mk",
-        "UNIT_CLDR_VERSION",
-        "UNIT_SOURCE",
-        True,
+        "icu-locale-deprecates.xml",
+        config.use_pool_bundle,
         [])
 
     requests += generate_tree(config, glob, common_vars,
         "coll",
         "coll",
-        "colfiles.mk",
-        "COLLATION_CLDR_VERSION",
-        "COLLATION_SOURCE",
+        "icu-coll-deprecates.xml",
+        # Never use pool bundle for coll, brkitr, or rbnf
         False,
         # Depends on timezoneTypes.res and keyTypeData.res.
         # TODO: We should not need this dependency to build collation.
         # TODO: Bake keyTypeData.res into the common library?
-        [DepTarget("coll_ucadata"), DepTarget("misc_res")])
+        [DepTarget("coll_ucadata"), DepTarget("misc_res"), InFile("unidata/UCARules.txt")])
 
     requests += generate_tree(config, glob, common_vars,
         "brkitr",
         "brkitr",
-        "brkfiles.mk",
-        "BRK_RES_CLDR_VERSION",
-        "BRK_RES_SOURCE",
+        "icu-locale-deprecates.xml",
+        # Never use pool bundle for coll, brkitr, or rbnf
         False,
         [DepTarget("brkitr_brk"), DepTarget("dictionaries")])
 
     requests += generate_tree(config, glob, common_vars,
         "rbnf",
         "rbnf",
-        "rbnffiles.mk",
-        "RBNF_CLDR_VERSION",
-        "RBNF_SOURCE",
+        "icu-rbnf-deprecates.xml",
+        # Never use pool bundle for coll, brkitr, or rbnf
         False,
         [])
 
@@ -202,7 +189,7 @@ def generate_brkitr_brk(config, glob, common_vars):
         RepeatedExecutionRequest(
             name = "brkitr_brk",
             category = "brkitr_rules",
-            dep_targets = [DepTarget("cnvalias")],
+            dep_targets = [DepTarget("cnvalias"), DepTarget("ulayout")],
             input_files = input_files,
             output_files = output_files,
             tool = IcuTool("genbrk"),
@@ -224,7 +211,7 @@ def generate_stringprep(config, glob, common_vars):
         RepeatedExecutionRequest(
             name = "stringprep",
             category = "stringprep",
-            dep_targets = [],
+            dep_targets = [InFile("unidata/NormalizationCorrections.txt")],
             input_files = input_files,
             output_files = output_files,
             tool = IcuTool("gensprep"),
@@ -272,7 +259,8 @@ def generate_brkitr_dictionaries(config, glob, common_vars):
 def generate_normalization(config, glob, common_vars):
     # NRM Files
     input_files = [InFile(filename) for filename in glob("in/*.nrm")]
-    input_files.remove(InFile("in/nfc.nrm"))  # nfc.nrm is pre-compiled into C++
+    # nfc.nrm is pre-compiled into C++; see generate_full_unicore_data
+    input_files.remove(InFile("in/nfc.nrm"))
     output_files = [OutFile(v.filename[3:]) for v in input_files]
     return [
         RepeatedExecutionRequest(
@@ -307,6 +295,36 @@ def generate_coll_ucadata(config, glob, common_vars):
     ]
 
 
+def generate_full_unicore_data(config, glob, common_vars):
+    # The core Unicode properties files (pnames.icu, uprops.icu, ucase.icu, ubidi.icu)
+    # are hardcoded in the common DLL and therefore not included in the data package any more.
+    # They are not built by default but need to be built for ICU4J data,
+    # both in the .jar and in the .dat file (if ICU4J uses the .dat file).
+    # See ICU-4497.
+    if not config.include_uni_core_data:
+        return []
+
+    basenames = [
+        "pnames.icu",
+        "uprops.icu",
+        "ucase.icu",
+        "ubidi.icu",
+        "nfc.nrm"
+    ]
+    input_files = [InFile("in/%s" % bn) for bn in basenames]
+    output_files = [OutFile(bn) for bn in basenames]
+    return [
+        RepeatedExecutionRequest(
+            name = "unicore",
+            category = "unicore",
+            input_files = input_files,
+            output_files = output_files,
+            tool = IcuTool("icupkg"),
+            args = "-t{ICUDATA_CHAR} {IN_DIR}/{INPUT_FILE} {OUT_DIR}/{OUTPUT_FILE}"
+        )
+    ]
+
+
 def generate_unames(config, glob, common_vars):
     # Unicode Character Names
     input_file = InFile("in/unames.icu")
@@ -315,6 +333,25 @@ def generate_unames(config, glob, common_vars):
         SingleExecutionRequest(
             name = "unames",
             category = "unames",
+            dep_targets = [],
+            input_files = [input_file],
+            output_files = [output_file],
+            tool = IcuTool("icupkg"),
+            args = "-t{ICUDATA_CHAR} {IN_DIR}/{INPUT_FILES[0]} {OUT_DIR}/{OUTPUT_FILES[0]}",
+            format_with = {}
+        )
+    ]
+
+
+def generate_ulayout(config, glob, common_vars):
+    # Unicode text layout properties
+    basename = "ulayout"
+    input_file = InFile("in/%s.icu" % basename)
+    output_file = OutFile("%s.icu" % basename)
+    return [
+        SingleExecutionRequest(
+            name = basename,
+            category = basename,
             dep_targets = [],
             input_files = [input_file],
             output_files = [output_file],
@@ -378,6 +415,9 @@ def generate_translit(config, glob, common_vars):
         InFile("translit/en.txt"),
         InFile("translit/el.txt")
     ]
+    dep_files = set(InFile(filename) for filename in glob("translit/*.txt"))
+    dep_files -= set(input_files)
+    dep_files = list(sorted(dep_files))
     input_basenames = [v.filename[9:] for v in input_files]
     output_files = [
         OutFile("translit/%s.res" % v[:-4])
@@ -387,7 +427,7 @@ def generate_translit(config, glob, common_vars):
         RepeatedOrSingleExecutionRequest(
             name = "translit_res",
             category = "translit",
-            dep_targets = [],
+            dep_targets = dep_files,
             input_files = input_files,
             output_files = output_files,
             tool = IcuTool("genrb"),
@@ -409,9 +449,7 @@ def generate_tree(
         common_vars,
         sub_dir,
         out_sub_dir,
-        resfile_name,
-        version_var,
-        source_var,
+        xml_filename,
         use_pool_bundle,
         dep_targets):
     requests = []
@@ -480,48 +518,48 @@ def generate_tree(
         )
     ]
 
-    # Generate index txt file
-    # TODO: Change .mk files to .py files so they can be loaded directly.
-    # Alternatively, figure out a way to not require reading this file altogether.
-    # Right now, it is required for the index list file.
-    # Reading these files as .py will be required for Bazel.
-    mk_values = parse_makefile("{GLOB_DIR}/{IN_SUB_DIR}/{RESFILE_NAME}".format(
-        IN_SUB_DIR = sub_dir,
-        RESFILE_NAME = resfile_name,
-        **common_vars
-    ))
-    cldr_version = mk_values[version_var] if version_var and sub_dir == "locales" else None
-    index_input_files = [
-        InFile("%s/%s" % (sub_dir, basename))
-        for basename in mk_values[source_var].split()
-    ]
+    # Generate res_index file
+    # Exclude the deprecated locale variants and root; see ICU-20628. This
+    # could be data-driven, but we do not want to perform I/O in this script
+    # (for example, we do not want to read from an XML file).
+    excluded_locales = set([
+        "ja_JP_TRADITIONAL",
+        "th_TH_TRADITIONAL",
+        "de_",
+        "de__PHONEBOOK",
+        "es_",
+        "es__TRADITIONAL",
+        "root",
+    ])
+    # Put alias locales in a separate structure; see ICU-20627
+    alias_locales = set(locale_dependencies.data["aliases"].keys())
+    alias_files = []
+    installed_files = []
+    for f in input_files:
+        file_stem = IndexRequest.locale_file_stem(f)
+        if file_stem in excluded_locales:
+            continue
+        destination = alias_files if file_stem in alias_locales else installed_files
+        destination.append(f)
+    cldr_version = locale_dependencies.data["cldrVersion"] if sub_dir == "locales" else None
     index_file_txt = TmpFile("{IN_SUB_DIR}/{INDEX_NAME}.txt".format(
         IN_SUB_DIR = sub_dir,
         **common_vars
     ))
-    requests += [
-        IndexTxtRequest(
-            name = "%s_index_txt" % sub_dir,
-            category = category,
-            input_files = index_input_files,
-            output_file = index_file_txt,
-            cldr_version = cldr_version
-        )
-    ]
-
-    # Generate index res file
     index_res_file = OutFile("{OUT_PREFIX}{INDEX_NAME}.res".format(
         OUT_PREFIX = out_prefix,
         **common_vars
     ))
+    index_file_target_name = "%s_index_txt" % sub_dir
     requests += [
-        SingleExecutionRequest(
-            name = "%s_index_res" % sub_dir,
-            category = "%s_index" % sub_dir,
-            dep_targets = [],
-            input_files = [index_file_txt],
-            output_files = [index_res_file],
-            tool = IcuTool("genrb"),
+        IndexRequest(
+            name = index_file_target_name,
+            category = category,
+            installed_files = installed_files,
+            alias_files = alias_files,
+            txt_file = index_file_txt,
+            output_file = index_res_file,
+            cldr_version = cldr_version,
             args = "-s {TMP_DIR}/{IN_SUB_DIR} -d {OUT_DIR}/{OUT_PREFIX} -i {OUT_DIR} "
                 "-k "
                 "{INDEX_NAME}.txt",

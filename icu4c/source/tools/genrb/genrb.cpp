@@ -205,10 +205,10 @@ main(int argc,
                 "\t-c or --copyright        include copyright notice\n");
         fprintf(stderr,
                 "\t-e or --encoding         encoding of source files\n"
-                "\t-d of --destdir          destination directory, followed by the path, defaults to %s\n"
-                "\t-s or --sourcedir        source directory for files followed by path, defaults to %s\n"
+                "\t-d or --destdir          destination directory, followed by the path, defaults to '%s'\n"
+                "\t-s or --sourcedir        source directory for files followed by path, defaults to '%s'\n"
                 "\t-i or --icudatadir       directory for locating any needed intermediate data files,\n"
-                "\t                         followed by path, defaults to %s\n",
+                "\t                         followed by path, defaults to '%s'\n",
                 u_getDataDirectory(), u_getDataDirectory(), u_getDataDirectory());
         fprintf(stderr,
                 "\t-j or --write-java       write a Java ListResourceBundle for ICU4J, followed by optional encoding\n"
@@ -240,7 +240,7 @@ main(int argc,
                 "\t                           (--writePoolBundle and --usePoolBundle cannot be combined)\n");
         fprintf(stderr,
                 "\t      --filterDir          Input directory where filter files are available.\n"
-                "\t                           For more on filter files, see Python buildtool.\n");
+                "\t                           For more on filter files, see ICU Data Build Tool.\n");
 
         return illegalArg ? U_ILLEGAL_ARGUMENT_ERROR : U_ZERO_ERROR;
     }
@@ -585,9 +585,7 @@ processFile(const char *filename, const char *cp,
     CharString inputDirBuf;
 
     char outputFileName[256];
-
     int32_t dirlen  = 0;
-    int32_t filelen = 0;
 
     if (U_FAILURE(status)) {
         return;
@@ -595,8 +593,6 @@ processFile(const char *filename, const char *cp,
     if(filename==NULL){
         status=U_ILLEGAL_ARGUMENT_ERROR;
         return;
-    }else{
-        filelen = (int32_t)uprv_strlen(filename);
     }
 
     if(inputDir == NULL) {
@@ -693,6 +689,10 @@ processFile(const char *filename, const char *cp,
             if (U_FAILURE(status)) {
                 return;
             }
+        }
+
+        if (isVerbose()) {
+            filter.print(std::cout);
         }
 
         // Apply the filter to the data

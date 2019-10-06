@@ -32,8 +32,13 @@ flag_parser = argparse.ArgumentParser(
 )
 flag_parser.add_argument(
     "--rev-range",
-    help = "A git revision range; see https://git-scm.com/docs/gitrevisions",
-    default = "latest..master"
+    help = "A git revision range; see https://git-scm.com/docs/gitrevisions. Should be the two-dot range between the previous release and the current tip.",
+    required = True
+)
+flag_parser.add_argument(
+    "--repo-root",
+    help = "Path to the repository to check",
+    default = os.path.join(os.path.dirname(__file__), "..", "..")
 )
 flag_parser.add_argument(
     "--jira-hostname",
@@ -52,8 +57,13 @@ flag_parser.add_argument(
 )
 flag_parser.add_argument(
     "--jira-query",
-    help = "JQL query to match with tickets.",
-    default = "project=ICU AND fixVersion=63.1"
+    help = "JQL query load tickets; this should match tickets expected to correspond to the commits being checked. Example: 'project=ICU and fixVersion=63.1'; set fixVersion to the upcoming version.",
+    required = True
+)
+flag_parser.add_argument(
+    "--github-url",
+    help = "Base URL of the GitHub repo",
+    default = "https://github.com/unicode-org/icu"
 )
 
 
@@ -61,27 +71,29 @@ def issue_id_to_url(issue_id, jira_hostname, **kwargs):
     return "https://%s/browse/%s" % (jira_hostname, issue_id)
 
 
-def pretty_print_commit(commit, **kwargs):
+def pretty_print_commit(commit, github_url, **kwargs):
     print("- %s `%s`" % (commit.commit.hexsha[:7], commit.commit.summary))
     print("\t- Authored by %s <%s>" % (commit.commit.author.name, commit.commit.author.email))
     print("\t- Committed at %s" % commit.commit.committed_datetime.isoformat())
-    print("\t- GitHub Link: %s" % "https://github.com/unicode-org/icu/commit/%s" % commit.commit.hexsha)
+    print("\t- GitHub Link: %s" % "%s/commit/%s" % (github_url, commit.commit.hexsha))
 
 
 def pretty_print_issue(issue, **kwargs):
     print("- %s: `%s`" % (issue.issue_id, issue.issue.fields.summary))
-    print("\t- Assigned to %s" % issue.issue.fields.assignee.displayName)
+    if issue.issue.fields.assignee:
+        print("\t- Assigned to %s" % issue.issue.fields.assignee.displayName)
+    else:
+        print("\t- No assignee!")
     print("\t- Jira Link: %s" % issue_id_to_url(issue.issue_id, **kwargs))
 
 
-def get_commits(rev_range, **kwargs):
+def get_commits(repo_root, rev_range, **kwargs):
     """
     Yields an ICUCommit for each commit in the user-specified rev-range.
     """
-    repo_path = os.path.join(os.path.dirname(__file__), "..", "..")
-    repo = Repo(repo_path)
+    repo = Repo(repo_root)
     for commit in repo.iter_commits(rev_range):
-        match = re.search(r"^(ICU-\d+) ", commit.message)
+        match = re.search(r"^(\w+-\d+) ", commit.message)
         if match:
             yield ICUCommit(match.group(1), commit)
         else:
@@ -164,6 +176,7 @@ def main():
         (issue_id, [commit for commit in commits if commit.issue_id == issue_id])
         for issue_id in sorted(commit_issue_ids)
     ]
+    jira_issue_map = {issue.issue_id: issue for issue in issues}
     jira_issue_ids = set(issue.issue_id for issue in issues)
     closed_jira_issue_ids = set(issue.issue_id for issue in issues if issue.is_closed)
 
@@ -179,6 +192,7 @@ def main():
     print("Environment:")
     print("- Latest Commit: %s" % commits[0].commit.hexsha)
     print("- Jira Query: %s" % args.jira_query)
+    print("- Rev Range: %s" % args.rev_range)
     print("- Authenticated: %s" % "Yes" if authenticated else "No (sensitive tickets not shown)")
     print()
     print("## Problem Categories")
@@ -273,7 +287,10 @@ def main():
             continue
         print("#### Issue %s" % issue_id)
         print()
-        jira_issue = get_single_jira_issue(issue_id, **vars(args))
+        if issue_id in jira_issue_map:
+            jira_issue = jira_issue_map[issue_id]
+        else:
+            jira_issue = get_single_jira_issue(issue_id, **vars(args))
         if jira_issue:
             pretty_print_issue(jira_issue, **vars(args))
         else:

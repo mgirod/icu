@@ -454,6 +454,7 @@ static void
 testLCID(UResourceBundle *currentBundle,
          const char *localeName)
 {
+    (void)currentBundle; // suppress compiler warnings about unused variables
     UErrorCode status = U_ZERO_ERROR;
     uint32_t expectedLCID;
     char lcidStringC[64] = {0};
@@ -706,7 +707,7 @@ TestConsistentCountryInfo(void) {
         }
         fromVariantLen = uloc_getVariant(fromLocale, fromVariant, ULOC_FULLNAME_CAPACITY, &errorCode);
         if (fromVariantLen > 0) {
-            /* Most variants are ignorable like PREEURO, or collation variants. */
+            /* Most variants are ignorable like collation variants. */
             continue;
         }
         /* Start comparing only after the current index.
@@ -728,7 +729,7 @@ TestConsistentCountryInfo(void) {
             }
             toVariantLen = uloc_getVariant(toLocale, toVariant, ULOC_FULLNAME_CAPACITY, &errorCode);
             if (toVariantLen > 0) {
-                /* Most variants are ignorable like PREEURO, or collation variants. */
+                /* Most variants are ignorable like collation variants. */
                 /* They're a variant for a reason. */
                 continue;
             }

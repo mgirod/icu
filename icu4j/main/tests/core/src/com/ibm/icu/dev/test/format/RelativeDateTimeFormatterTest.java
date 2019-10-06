@@ -21,9 +21,11 @@ import com.ibm.icu.text.NumberFormat;
 import com.ibm.icu.text.RelativeDateTimeFormatter;
 import com.ibm.icu.text.RelativeDateTimeFormatter.AbsoluteUnit;
 import com.ibm.icu.text.RelativeDateTimeFormatter.Direction;
+import com.ibm.icu.text.RelativeDateTimeFormatter.FormattedRelativeDateTime;
 import com.ibm.icu.text.RelativeDateTimeFormatter.RelativeDateTimeUnit;
 import com.ibm.icu.text.RelativeDateTimeFormatter.RelativeUnit;
 import com.ibm.icu.text.RelativeDateTimeFormatter.Style;
+import com.ibm.icu.text.RuleBasedNumberFormat;
 import com.ibm.icu.util.ULocale;
 
 @RunWith(JUnit4.class)
@@ -403,6 +405,8 @@ public class RelativeDateTimeFormatterTest extends TestFmwk {
                 {Direction.THIS, AbsoluteUnit.FRIDAY, "this Friday"},
                 {Direction.THIS, AbsoluteUnit.SATURDAY, "this Saturday"},
                 {Direction.THIS, AbsoluteUnit.SUNDAY, "this Sunday"},
+                {Direction.THIS, AbsoluteUnit.HOUR, "this hour"},
+                {Direction.THIS, AbsoluteUnit.MINUTE, "this minute"},
 
                 {Direction.PLAIN, AbsoluteUnit.DAY, "day"},
                 {Direction.PLAIN, AbsoluteUnit.WEEK, "week"},
@@ -727,8 +731,8 @@ public class RelativeDateTimeFormatterTest extends TestFmwk {
             "2 minutes ago",        "2 minutes ago",      /* -2   */
             "1 minute ago",         "1 minute ago",       /* -1   */
             "0.7 minutes ago",      "0.7 minutes ago",    /* -0.7 */
-            "0 minutes ago",        "0 minutes ago",      /* -0   */
-            "in 0 minutes",         "in 0 minutes",       /*  0   */
+            "this minute",          "0 minutes ago",      /* -0   */
+            "this minute",          "in 0 minutes",       /*  0   */
             "in 0.7 minutes",       "in 0.7 minutes",     /*  0.7 */
             "in 1 minute",          "in 1 minute",        /*  1   */
             "in 2 minutes",         "in 2 minutes",       /*  2   */
@@ -765,6 +769,37 @@ public class RelativeDateTimeFormatterTest extends TestFmwk {
             "dans 5 jours",         "dans 5 jours"        /*  5   */
         };
 
+        String[] ak_decDef_long_stdAlon_sec = { // falls back to root
+        /*  text                    numeric */
+            "-5 s",                 "-5 s",               /* -5   */
+            "-2.2 s",               "-2.2 s",             /* -2.2 */
+            "-2 s",                 "-2 s",               /* -2   */
+            "-1 s",                 "-1 s",               /* -1   */
+            "-0.7 s",               "-0.7 s",             /* -0.7 */
+            "now",                  "-0 s",               /*  -0  */
+            "now",                  "+0 s",               /*  0   */
+            "+0.7 s",               "+0.7 s",             /*  0.7 */
+            "+1 s",                 "+1 s",               /*  1   */
+            "+2 s",                 "+2 s",               /*  2   */
+            "+5 s",                 "+5 s",               /*  5   */
+        };
+
+        @SuppressWarnings("unused")
+        String[] enIN_decDef_short_midSent_weds = {
+        /*  text                    numeric */
+            "5 Wed. ago",           "5 Wed. ago",         /* -5   */
+            "2.2 Wed. ago",         "2.2 Wed. ago",       /* -2.2 */
+            "2 Wed. ago",           "2 Wed. ago",         /* -2   */
+            "last Wed",             "1 Wed. ago",         /* -1   */
+            "0.7 Wed. ago",         "0.7 Wed. ago",       /* -0.7 */
+            "this Wed",             "0 Wed. ago",         /*  -0  */
+            "this Wed",             "in 0 Wed.",          /*  0   */
+            "in 0.7 Wed.",          "in 0.7 Wed.",        /*  0.7 */
+            "next Wed",             "in 1 Wed",           /*  1   */ // in 1 Wed. missing in logical group
+            "in 2  Wed.",           "in 2 Wed.",          /*  2   */
+            "in 5  Wed.",           "in 5 Wed."           /*  5   */
+        };
+
         class TestRelativeDateTimeUnitItem {
             public String               localeID;
             public int                  decPlaces; /* fixed decimal places; -1 to use default num formatter */
@@ -797,6 +832,11 @@ public class RelativeDateTimeFormatterTest extends TestFmwk {
                                                                     RelativeDateTimeUnit.TUESDAY, en_dec0_long_midSent_tues),
             new TestRelativeDateTimeUnitItem("fr", -1, Style.LONG,  DisplayContext.CAPITALIZATION_FOR_MIDDLE_OF_SENTENCE,
                                                                     RelativeDateTimeUnit.DAY, fr_decDef_long_midSent_day),
+            new TestRelativeDateTimeUnitItem("ak", -1, Style.LONG,  DisplayContext.CAPITALIZATION_FOR_STANDALONE,
+                                                                    RelativeDateTimeUnit.SECOND, ak_decDef_long_stdAlon_sec),
+            // ICU4J RelativeDateTimeFormatter does not currently support RelativeDateTimeUnit.WEDNESDAY
+            //new TestRelativeDateTimeUnitItem("en_IN", -1, Style.SHORT, DisplayContext.CAPITALIZATION_FOR_MIDDLE_OF_SENTENCE,
+            //                                                        RelativeDateTimeUnit.WEDNESDAY, enIN_decDef_short_midSent_weds),
         };
         for (TestRelativeDateTimeUnitItem item: items) {
             ULocale uloc = new ULocale(item.localeID);
@@ -990,12 +1030,101 @@ public class RelativeDateTimeFormatterTest extends TestFmwk {
         assertEquals("narrow: in 6 qtr", "in 6 qtr", w);
     }
 
-@Test
-public void TestLocales() {
-    ULocale[] availableLocales = ULocale.getAvailableLocales();
-    for (ULocale loc: availableLocales) {
-        RelativeDateTimeFormatter.getInstance(loc);
+    @Test
+    public void TestLocales() {
+        ULocale[] availableLocales = ULocale.getAvailableLocales();
+        for (ULocale loc: availableLocales) {
+            RelativeDateTimeFormatter.getInstance(loc);
+        }
     }
-}
+
+    @Test
+    public void TestFields() {
+        RelativeDateTimeFormatter fmt = RelativeDateTimeFormatter.getInstance(ULocale.US);
+
+        {
+            String message = "automatic absolute unit";
+            FormattedRelativeDateTime fv = fmt.formatToValue(1, RelativeDateTimeUnit.DAY);
+            String expectedString = "tomorrow";
+            Object[][] expectedFieldPositions = new Object[][]{
+                {RelativeDateTimeFormatter.Field.LITERAL, 0, 8}};
+            FormattedValueTest.checkFormattedValue(message, fv, expectedString, expectedFieldPositions);
+        }
+        {
+            String message = "automatic numeric unit";
+            FormattedRelativeDateTime fv = fmt.formatToValue(3, RelativeDateTimeUnit.DAY);
+            String expectedString = "in 3 days";
+            Object[][] expectedFieldPositions = new Object[][]{
+                {RelativeDateTimeFormatter.Field.LITERAL, 0, 2},
+                {NumberFormat.Field.INTEGER, 3, 4},
+                {RelativeDateTimeFormatter.Field.NUMERIC, 3, 4},
+                {RelativeDateTimeFormatter.Field.LITERAL, 5, 9}};
+            FormattedValueTest.checkFormattedValue(message, fv, expectedString, expectedFieldPositions);
+        }
+        {
+            String message = "manual absolute unit";
+            FormattedRelativeDateTime fv = fmt.formatToValue(Direction.NEXT, AbsoluteUnit.MONDAY);
+            String expectedString = "next Monday";
+            Object[][] expectedFieldPositions = new Object[][]{
+                {RelativeDateTimeFormatter.Field.LITERAL, 0, 11}};
+            FormattedValueTest.checkFormattedValue(message, fv, expectedString, expectedFieldPositions);
+        }
+        {
+            String message = "manual numeric unit";
+            FormattedRelativeDateTime fv = fmt.formatNumericToValue(1.5, RelativeDateTimeUnit.WEEK);
+            String expectedString = "in 1.5 weeks";
+            Object[][] expectedFieldPositions = new Object[][]{
+                {RelativeDateTimeFormatter.Field.LITERAL, 0, 2},
+                {NumberFormat.Field.INTEGER, 3, 4},
+                {NumberFormat.Field.DECIMAL_SEPARATOR, 4, 5},
+                {NumberFormat.Field.FRACTION, 5, 6},
+                {RelativeDateTimeFormatter.Field.NUMERIC, 3, 6},
+                {RelativeDateTimeFormatter.Field.LITERAL, 7, 12}};
+            FormattedValueTest.checkFormattedValue(message, fv, expectedString, expectedFieldPositions);
+        }
+        {
+            String message = "manual numeric resolved unit";
+            FormattedRelativeDateTime fv = fmt.formatToValue(12, Direction.LAST, RelativeUnit.HOURS);
+            String expectedString = "12 hours ago";
+            Object[][] expectedFieldPositions = new Object[][]{
+                {NumberFormat.Field.INTEGER, 0, 2},
+                {RelativeDateTimeFormatter.Field.NUMERIC, 0, 2},
+                {RelativeDateTimeFormatter.Field.LITERAL, 3, 12}};
+            FormattedValueTest.checkFormattedValue(message, fv, expectedString, expectedFieldPositions);
+        }
+
+        // Test when the number field is at the end
+        fmt = RelativeDateTimeFormatter.getInstance(new ULocale("sw"));
+        {
+            String message = "numeric field at end";
+            FormattedRelativeDateTime fv = fmt.formatToValue(12, RelativeDateTimeUnit.HOUR);
+            String expectedString = "baada ya saa 12";
+            Object[][] expectedFieldPositions = new Object[][]{
+                {RelativeDateTimeFormatter.Field.LITERAL, 0, 12},
+                {NumberFormat.Field.INTEGER, 13, 15},
+                {RelativeDateTimeFormatter.Field.NUMERIC, 13, 15}};
+            FormattedValueTest.checkFormattedValue(message, fv, expectedString, expectedFieldPositions);
+        }
+    }
+
+    @Test
+    public void TestRBNF() {
+        RuleBasedNumberFormat rbnf = new RuleBasedNumberFormat(ULocale.US, RuleBasedNumberFormat.SPELLOUT);
+        RelativeDateTimeFormatter fmt = RelativeDateTimeFormatter.getInstance(ULocale.US, rbnf);
+        assertEquals("format (direction)", "in five seconds", fmt.format(5, Direction.NEXT, RelativeUnit.SECONDS));
+        assertEquals("formatNumeric", "one week ago", fmt.formatNumeric(-1, RelativeDateTimeUnit.WEEK));
+        assertEquals("format (absolute)", "yesterday", fmt.format(Direction.LAST, AbsoluteUnit.DAY));
+        assertEquals("format (relative)", "in forty-two months", fmt.format(42, RelativeDateTimeUnit.MONTH));
+
+        {
+            String message = "formatToValue (relative)";
+            FormattedRelativeDateTime fv = fmt.formatToValue(-100, RelativeDateTimeUnit.YEAR);
+            String expectedString = "one hundred years ago";
+            Object[][] expectedFieldPositions = new Object[][]{
+                {RelativeDateTimeFormatter.Field.NUMERIC, 0, 11},
+                {RelativeDateTimeFormatter.Field.LITERAL, 12, 21}};
+            FormattedValueTest.checkFormattedValue(message, fv, expectedString, expectedFieldPositions);
+        }
+    }
 
 }

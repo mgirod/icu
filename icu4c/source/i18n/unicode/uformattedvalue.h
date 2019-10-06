@@ -10,6 +10,8 @@
 
 #include "unicode/ufieldpositer.h"
 
+#ifndef U_HIDE_DRAFT_API
+
 /**
  * \file
  * \brief C API: Abstract operations for localized strings.
@@ -22,6 +24,12 @@
 /**
  * All possible field categories in ICU. Every entry in this enum corresponds
  * to another enum that exists in ICU.
+ * 
+ * In the APIs that take a UFieldCategory, an int32_t type is used. Field
+ * categories having any of the top four bits turned on are reserved as
+ * private-use for external APIs implementing FormattedValue. This means that
+ * categories 2^28 and higher or below zero (with the highest bit turned on)
+ * are private-use and will not be used by ICU in the future.
  *
  * @draft ICU 64
  */
@@ -54,56 +62,40 @@ typedef enum UFieldCategory {
      */
     UFIELD_CATEGORY_LIST,
 
+    /**
+     * For fields in URelativeDateTimeFormatterField (ureldatefmt.h), from ICU 64.
+     *
+     * @draft ICU 64
+     */
+    UFIELD_CATEGORY_RELATIVE_DATETIME,
+
+    /**
+     * Reserved for possible future fields in UDateIntervalFormatField.
+     *
+     * @internal
+     */
+    UFIELD_CATEGORY_DATE_INTERVAL,
+
+#ifndef U_HIDE_INTERNAL_API
+    /** @internal */
+    UFIELD_CATEGORY_COUNT,
+#endif  /* U_HIDE_INTERNAL_API */
+
+    /**
+     * Category for spans in a list.
+     *
+     * @draft ICU 64
+     */
+    UFIELD_CATEGORY_LIST_SPAN = 0x1000 + UFIELD_CATEGORY_LIST,
+
+    /**
+     * Category for spans in a date interval.
+     *
+     * @draft ICU 64
+     */
+    UFIELD_CATEGORY_DATE_INTERVAL_SPAN = 0x1000 + UFIELD_CATEGORY_DATE_INTERVAL,
+
 } UFieldCategory;
-
-
-/**
- * Represents the type of constraint for ConstrainedFieldPosition.
- *
- * Constraints are used to control the behavior of iteration in FormattedValue.
- *
- * @draft ICU 64
- */
-typedef enum UCFPosConstraintType {
-    /**
-     * Represents the lack of a constraint.
-     *
-     * This is the return value of ConstrainedFieldPosition#getConstraintType or
-     * ucfpos_getConstraintType if no "constrain" methods were called.
-     *
-     * @draft ICU 64
-     */
-    UCFPOS_CONSTRAINT_NONE,
-
-    /**
-     * Represents that the field category is constrained.
-     *
-     * This is the return value of ConstrainedFieldPosition#getConstraintType or
-     * cfpos_getConstraintType after ConstrainedFieldPosition#constrainCategory or
-     * cfpos_constrainCategory is called.
-     *
-     * Use getCategory to access the category. FormattedValue implementations
-     * should not change that values while this constraint is active.
-     *
-     * @draft ICU 64
-     */
-    UCFPOS_CONSTRAINT_CATEGORY,
-
-    /**
-     * Represents that the field and field category are constrained.
-     *
-     * This is the return value of ConstrainedFieldPosition#getConstraintType or
-     * cfpos_getConstraintType after ConstrainedFieldPosition#constrainField or
-     * cfpos_constrainField is called.
-     *
-     * Use getCategory and getField to access the category and field.
-     * FormattedValue implementations should not change those values while
-     * this constraint is active.
-     *
-     * @draft ICU 64
-     */
-    UCFPOS_CONSTRAINT_FIELD
-} UCFPosConstraintType;
 
 
 struct UConstrainedFieldPosition;
@@ -187,7 +179,7 @@ ucfpos_close(UConstrainedFieldPosition* ucfpos);
 U_DRAFT void U_EXPORT2
 ucfpos_constrainCategory(
     UConstrainedFieldPosition* ucfpos,
-    UFieldCategory category,
+    int32_t category,
     UErrorCode* ec);
 
 
@@ -220,22 +212,8 @@ ucfpos_constrainCategory(
 U_DRAFT void U_EXPORT2
 ucfpos_constrainField(
     UConstrainedFieldPosition* ucfpos,
-    UFieldCategory category,
+    int32_t category,
     int32_t field,
-    UErrorCode* ec);
-
-
-/**
- * Gets the currently active constraint.
- *
- * @param ucfpos The instance of UConstrainedFieldPosition.
- * @param ec Set if an error occurs.
- * @return The currently active constraint type.
- * @draft ICU 64
- */
-U_DRAFT UCFPosConstraintType U_EXPORT2
-ucfpos_getConstraintType(
-    const UConstrainedFieldPosition* ucfpos,
     UErrorCode* ec);
 
 
@@ -251,7 +229,7 @@ ucfpos_getConstraintType(
  * @return The field category saved in the instance.
  * @draft ICU 64
  */
-U_DRAFT UFieldCategory U_EXPORT2
+U_DRAFT int32_t U_EXPORT2
 ucfpos_getCategory(
     const UConstrainedFieldPosition* ucfpos,
     UErrorCode* ec);
@@ -330,6 +308,26 @@ ucfpos_setInt64IterationContext(
 
 
 /**
+ * Determines whether a given field should be included given the
+ * constraints.
+ *
+ * Intended to be used by FormattedValue implementations.
+ *
+ * @param ucfpos The instance of UConstrainedFieldPosition.
+ * @param category The category to test.
+ * @param field The field to test.
+ * @param ec Set if an error occurs.
+ * @draft ICU 64
+ */
+U_DRAFT UBool U_EXPORT2
+ucfpos_matchesField(
+    const UConstrainedFieldPosition* ucfpos,
+    int32_t category,
+    int32_t field,
+    UErrorCode* ec);
+
+
+/**
  * Sets new values for the primary public getters.
  *
  * Intended to be used by FormattedValue implementations.
@@ -348,7 +346,7 @@ ucfpos_setInt64IterationContext(
 U_DRAFT void U_EXPORT2
 ucfpos_setState(
     UConstrainedFieldPosition* ucfpos,
-    UFieldCategory category,
+    int32_t category,
     int32_t field,
     int32_t start,
     int32_t limit,
@@ -438,5 +436,6 @@ U_NAMESPACE_END
 #endif // U_SHOW_CPLUSPLUS_API
 
 
+#endif  /* U_HIDE_DRAFT_API */
 #endif /* #if !UCONFIG_NO_FORMATTING */
 #endif // __UFORMATTEDVALUE_H__

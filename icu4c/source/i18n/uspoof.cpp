@@ -43,7 +43,9 @@ static UnicodeSet *gRecommendedSet = NULL;
 static const Normalizer2 *gNfdNormalizer = NULL;
 static UInitOnce gSpoofInitStaticsOnce = U_INITONCE_INITIALIZER;
 
-static UBool U_CALLCONV
+namespace {
+
+UBool U_CALLCONV
 uspoof_cleanup(void) {
     delete gInclusionSet;
     gInclusionSet = NULL;
@@ -54,7 +56,7 @@ uspoof_cleanup(void) {
     return TRUE;
 }
 
-static void U_CALLCONV initializeStatics(UErrorCode &status) {
+void U_CALLCONV initializeStatics(UErrorCode &status) {
     static const char16_t *inclusionPat =
         u"['\\-.\\:\\u00B7\\u0375\\u058A\\u05F3\\u05F4\\u06FD\\u06FE\\u0F0B\\u200C"
         u"\\u200D\\u2010\\u2019\\u2027\\u30A0\\u30FB]";
@@ -133,10 +135,9 @@ static void U_CALLCONV initializeStatics(UErrorCode &status) {
         u"\\uA7C6\\uA7FA\\uA9E7-\\uA9FE\\uAA60-\\uAA76\\uAA7A-\\uAA7F\\uAB01-\\uAB06"
         u"\\uAB09-\\uAB0E\\uAB11-\\uAB16\\uAB20-\\uAB26\\uAB28-\\uAB2E\\uAB66\\uAB67"
         u"\\uAC00-\\uD7A3\\uFA0E\\uFA0F\\uFA11\\uFA13\\uFA14\\uFA1F\\uFA21\\uFA23"
-        u"\\uFA24\\uFA27-\\uFA29\\U0001133B\\U00016FE3\\U0001B002-\\U0001B11E"
-        u"\\U0001B150-\\U0001B152\\U0001B164-\\U0001B167\\U00020000-\\U0002A6D6"
-        u"\\U0002A700-\\U0002B734\\U0002B740-\\U0002B81D\\U0002B820-\\U0002CEA1"
-        u"\\U0002CEB0-\\U0002EBE0]";
+        u"\\uFA24\\uFA27-\\uFA29\\U0001133B\\U0001B150-\\U0001B152\\U0001B164-"
+        u"\\U0001B167\\U00020000-\\U0002A6D6\\U0002A700-\\U0002B734\\U0002B740-"
+        u"\\U0002B81D\\U0002B820-\\U0002CEA1\\U0002CEB0-\\U0002EBE0]";
 
     gRecommendedSet = new UnicodeSet(UnicodeString(recommendedPat), status);
     if (gRecommendedSet == NULL) {
@@ -148,6 +149,8 @@ static void U_CALLCONV initializeStatics(UErrorCode &status) {
     gNfdNormalizer = Normalizer2::getNFDInstance(status);
     ucln_i18n_registerCleanup(UCLN_I18N_SPOOF, uspoof_cleanup);
 }
+
+}  // namespace
 
 U_CFUNC void uspoof_internalInitStatics(UErrorCode *status) {
     umtx_initOnce(gSpoofInitStaticsOnce, &initializeStatics, *status);
@@ -346,7 +349,7 @@ uspoof_setAllowedUnicodeSet(USpoofChecker *sc, const UnicodeSet *chars, UErrorCo
         *status = U_ILLEGAL_ARGUMENT_ERROR;
         return;
     }
-    UnicodeSet *clonedSet = static_cast<UnicodeSet *>(chars->clone());
+    UnicodeSet *clonedSet = chars->clone();
     if (clonedSet == NULL || clonedSet->isBogus()) {
         *status = U_MEMORY_ALLOCATION_ERROR;
         return;
@@ -546,7 +549,9 @@ uspoof_checkUnicodeString(const USpoofChecker *sc,
     return uspoof_check2UnicodeString(sc, id, NULL, status);
 }
 
-static int32_t checkImpl(const SpoofImpl* This, const UnicodeString& id, CheckResult* checkResult, UErrorCode* status) {
+namespace {
+
+int32_t checkImpl(const SpoofImpl* This, const UnicodeString& id, CheckResult* checkResult, UErrorCode* status) {
     U_ASSERT(This != NULL);
     U_ASSERT(checkResult != NULL);
     checkResult->clear();
@@ -637,6 +642,8 @@ static int32_t checkImpl(const SpoofImpl* This, const UnicodeString& id, CheckRe
     checkResult->fChecks = result;
     return checkResult->toCombinedBitmask(This->fChecks);
 }
+
+}  // namespace
 
 U_CAPI int32_t U_EXPORT2
 uspoof_check2UnicodeString(const USpoofChecker *sc,

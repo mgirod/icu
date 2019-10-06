@@ -10,21 +10,16 @@
 #include "unicode/numberformatter.h"
 #include "number_types.h"
 #include "number_decimalquantity.h"
-#include "number_stringbuilder.h"
-#include "capi_helper.h"
+#include "formatted_string_builder.h"
+#include "formattedval_impl.h"
 
 U_NAMESPACE_BEGIN namespace number {
 namespace impl {
 
 
-struct UFormattedValueImpl;
-
-// Magic number as ASCII == "UFV"
-typedef IcuCApiHelper<UFormattedValue, UFormattedValueImpl, 0x55465600> UFormattedValueApiHelper;
-
-struct UFormattedValueImpl : public UMemory, public UFormattedValueApiHelper {
-    FormattedValue* fFormattedValue = nullptr;
-};
+/** Helper function used in upluralrules.cpp */
+const DecimalQuantity* validateUFormattedNumberToDecimalQuantity(
+    const UFormattedNumber* uresult, UErrorCode& status);
 
 
 /**
@@ -36,9 +31,12 @@ struct UFormattedValueImpl : public UMemory, public UFormattedValueApiHelper {
  * The DecimalQuantity is not currently being used by FormattedNumber, but at some point it could be used
  * to add a toDecNumber() or similar method.
  */
-struct UFormattedNumberData : public UMemory {
+class UFormattedNumberData : public FormattedValueStringBuilderImpl {
+public:
+    UFormattedNumberData() : FormattedValueStringBuilderImpl(0) {}
+    virtual ~UFormattedNumberData();
+
     DecimalQuantity quantity;
-    NumberStringBuilder string;
 };
 
 

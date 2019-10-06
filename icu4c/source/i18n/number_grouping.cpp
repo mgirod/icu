@@ -34,7 +34,7 @@ int16_t getMinGroupingForLocale(const Locale& locale) {
 
 }
 
-Grouper Grouper::forStrategy(UGroupingStrategy grouping) {
+Grouper Grouper::forStrategy(UNumberGroupingStrategy grouping) {
     switch (grouping) {
     case UNUM_GROUPING_OFF:
         return {-1, -1, -2, grouping};
@@ -48,7 +48,6 @@ Grouper Grouper::forStrategy(UGroupingStrategy grouping) {
         return {3, 3, 1, grouping};
     default:
         UPRV_UNREACHABLE;
-        return {}; // return a value: silence compiler warning
     }
 }
 

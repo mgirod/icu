@@ -16,6 +16,10 @@ AC_INIT([ICU],
         [International Components for Unicode],
         [http://icu-project.org])
 
+# Instruct Python to never write any byte code to the ICU source tree.
+PYTHONDONTWRITEBYTECODE=1
+export PYTHONDONTWRITEBYTECODE
+
 AC_CONFIG_MACRO_DIR([config/m4])
 AC_CONFIG_SRCDIR([common/unicode/utypes.h])
 
@@ -197,6 +201,7 @@ fi
 
 # TODO(ICU-20301): Remove fallback to Python 2.
 AC_CHECK_PROGS(PYTHON, python3 "py -3" python "py")
+AC_SUBST(PYTHON)
 
 # Check for the platform make
 AC_PATH_PROGS(U_MAKE, gmake gnumake, make)
@@ -898,6 +903,14 @@ else
 fi
 AC_SUBST(U_HAVE_STRTOD_L)
 
+# Check if C++17 std::string_view is available.
+AC_LANG_PUSH([C++])
+AC_CHECK_TYPE(std::string_view, [], [], [[#include <string_view>]])
+if test "x$ac_cv_type_std__string_view" = xyes; then :
+  CONFIG_CPPFLAGS="${CONFIG_CPPFLAGS} -DU_HAVE_STRING_VIEW=1"
+fi
+AC_LANG_POP([C++])
+
 # Checks for typedefs
 AC_CHECK_TYPE(int8_t,signed char)
 AC_CHECK_TYPE(uint8_t,unsigned char)
@@ -1119,6 +1132,17 @@ AC_ARG_ENABLE(tools,
 	tools=true)
 ICU_CONDITIONAL(TOOLS, test "$tools" = true)
 
+# Enable/disable fuzzer target tests.
+AC_ARG_ENABLE(fuzzer,
+	[  --enable-fuzzer        build ICU's fuzzer test targets [default=no]],
+	[case "${enableval}" in
+		yes) fuzzer=true ;;
+		no)  fuzzer=false ;;
+		*) AC_MSG_ERROR(bad value ${enableval} for --enable-fuzzer) ;;
+		esac],
+	fuzzer=false)
+ICU_CONDITIONAL(FUZZER, test "$fuzzer" = true)
+
 AC_ARG_WITH(data-packaging,
 	[  --with-data-packaging     specify how to package ICU data. Possible values:
         files    raw files (.res, etc)
@@ -1299,6 +1323,7 @@ fi
 
 if test "${CXX}" = "clang++"; then
    CLANGCXXFLAGS="-Qunused-arguments -Wno-parentheses-equality"
+   LIBCXXFLAGS="$LIBCXXFLAGS -Wglobal-constructors"
 else
    CLANGCXXFLAGS=""
 fi
@@ -1382,6 +1407,7 @@ AC_CONFIG_FILES([icudefs.mk \
 		test/perf/utfperf/Makefile \
 		test/perf/utrie2perf/Makefile \
 		test/perf/leperf/Makefile \
+		test/fuzzer/Makefile \
 		samples/Makefile samples/date/Makefile \
 		samples/cal/Makefile samples/layout/Makefile])
 AC_OUTPUT
@@ -1389,20 +1415,36 @@ AC_OUTPUT
 if test -z "$PYTHON";
 then
     echo "" > data/rules.mk
+    echo "" > test/testdata/rules.mk
 else
-    echo "Spawning Python to generate data/rules.mk..."
-    PYTHONPATH="$srcdir/data" $PYTHON -m buildtool \
-        --format gnumake \
-        --seqmode parallel \
-        --glob_dir "$srcdir/data" \
-        --filter_file "$ICU_DATA_FILTER_FILE" \
-        > data/rules.mk
+    if test -f "$srcdir/data/locales/root.txt";
+    then
+        echo "Spawning Python to generate data/rules.mk..."
+        PYTHONPATH="$srcdir/python" \
+            $PYTHON -m icutools.databuilder \
+            --mode gnumake \
+            --seqmode parallel \
+            --src_dir "$srcdir/data" \
+            --filter_file "$ICU_DATA_FILTER_FILE" \
+            $ICU_DATA_BUILDTOOL_OPTS \
+            > data/rules.mk
+        if test "$?" != "0"; then
+            AC_MSG_ERROR(Python failed to run; see above error.)
+        fi
+    else
+      echo "Not rebuilding data/rules.mk, assuming prebuilt data in data/in"
+      touch data/rules.mk
+    fi
     echo "Spawning Python to generate test/testdata/rules.mk..."
-    PYTHONPATH="$srcdir/test/testdata:$srcdir/data" $PYTHON -m buildtool \
-        --format gnumake \
+    PYTHONPATH="$srcdir/python" \
+        $PYTHON -m icutools.databuilder \
+        --mode gnumake \
         --seqmode parallel \
-        --glob_dir "$srcdir/test/testdata" \
+        --src_dir "$srcdir/test/testdata" \
         > test/testdata/rules.mk
+    if test "$?" != "0"; then
+        AC_MSG_ERROR(Python failed to run; see above error.)
+    fi
 fi
 
 echo
@@ -1486,7 +1528,7 @@ fi
 
 if test -z "$PYTHON";
 then
-    echo "** Note: Python not found. You will not be able to build data from source."
+    echo "** Note: Python not found. You will not be able to build data from source or run tests."
 fi
 
 $as_unset _CXX_CXXSUFFIX

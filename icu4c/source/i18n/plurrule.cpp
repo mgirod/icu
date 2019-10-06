@@ -35,6 +35,7 @@
 #include "sharedpluralrules.h"
 #include "unifiedcache.h"
 #include "number_decimalquantity.h"
+#include "util.h"
 
 #if !UCONFIG_NO_FORMATTING
 
@@ -262,6 +263,16 @@ PluralRules::select(int32_t number) const {
 UnicodeString
 PluralRules::select(double number) const {
     return select(FixedDecimal(number));
+}
+
+UnicodeString
+PluralRules::select(const number::FormattedNumber& number, UErrorCode& status) const {
+    DecimalQuantity dq;
+    number.getDecimalQuantity(dq, status);
+    if (U_FAILURE(status)) {
+        return ICU_Utility::makeBogusString();
+    }
+    return select(dq);
 }
 
 UnicodeString
@@ -692,14 +703,14 @@ PluralRules::getRuleFromResource(const Locale& locale, UPluralType type, UErrorC
         return emptyStr;
     }
     int32_t resLen=0;
-    const char *curLocaleName=locale.getName();
+    const char *curLocaleName=locale.getBaseName();
     const UChar* s = ures_getStringByKey(locRes.getAlias(), curLocaleName, &resLen, &errCode);
 
     if (s == nullptr) {
         // Check parent locales.
         UErrorCode status = U_ZERO_ERROR;
         char parentLocaleName[ULOC_FULLNAME_CAPACITY];
-        const char *curLocaleName2=locale.getName();
+        const char *curLocaleName2=locale.getBaseName();
         uprv_strcpy(parentLocaleName, curLocaleName2);
 
         while (uloc_getParent(parentLocaleName, parentLocaleName,
@@ -1472,7 +1483,6 @@ PluralOperand tokenTypeToPluralOperand(tokenType tt) {
         return PLURAL_OPERAND_T;
     default:
         UPRV_UNREACHABLE;  // unexpected.
-        return PLURAL_OPERAND_N;
     }
 }
 
@@ -1685,7 +1695,6 @@ double FixedDecimal::getPluralOperand(PluralOperand operand) const {
         case PLURAL_OPERAND_V: return visibleDecimalDigitCount;
         default:
              UPRV_UNREACHABLE;  // unexpected.
-             return source;
     }
 }
 

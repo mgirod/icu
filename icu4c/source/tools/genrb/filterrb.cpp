@@ -23,6 +23,9 @@ ResKeyPath::ResKeyPath(const std::string& path, UErrorCode& status) {
         status = U_PARSE_ERROR;
         return;
     }
+    if (path.length() == 1) {
+        return;
+    }
     size_t i;
     size_t j = 0;
     while (true) {
@@ -63,6 +66,9 @@ std::ostream& operator<<(std::ostream& out, const ResKeyPath& value) {
 }
 
 
+PathFilter::~PathFilter() = default;
+
+
 void SimpleRuleBasedPathFilter::addRule(const std::string& ruleLine, UErrorCode& status) {
     if (ruleLine.empty()) {
         std::cerr << "genrb error: empty filter rules are not allowed" << std::endl;
@@ -85,17 +91,7 @@ void SimpleRuleBasedPathFilter::addRule(const ResKeyPath& path, bool inclusionRu
     if (U_FAILURE(status)) {
         return;
     }
-    Tree* node = &fRoot;
-    for (auto& key : path.pieces()) {
-        // note: operator[] auto-constructs default values
-        node = &node->fChildren[key];
-    }
-    if (isVerbose() && (node->fIncluded != PARTIAL || !node->fChildren.empty())) {
-        std::cout << "genrb info: rule on path " << path
-            << " overrides previous rules" << std::endl;
-    }
-    node->fIncluded = inclusionRule ? INCLUDE : EXCLUDE;
-    node->fChildren.clear();
+    fRoot.applyRule(path, path.pieces().begin(), inclusionRule, status);
 }
 
 PathFilter::EInclusion SimpleRuleBasedPathFilter::match(const ResKeyPath& path) const {
@@ -116,17 +112,23 @@ PathFilter::EInclusion SimpleRuleBasedPathFilter::match(const ResKeyPath& path) 
         auto child = node->fChildren.find(key);
         // Leaf case 1: input path descends outside the filter tree
         if (child == node->fChildren.end()) {
-            isLeaf = true;
-            break;
+            if (node->fWildcard) {
+                // A wildcard pattern is present; continue checking
+                node = node->fWildcard.get();
+            } else {
+                isLeaf = true;
+                break;
+            }
+        } else {
+            node = &child->second;
         }
-        node = &child->second;
         if (node->fIncluded != PARTIAL) {
             defaultResult = node->fIncluded;
         }
     }
 
     // Leaf case 2: input path exactly matches a filter leaf
-    if (node->fChildren.empty()) {
+    if (node->isLeaf()) {
         isLeaf = true;
     }
 
@@ -143,6 +145,69 @@ PathFilter::EInclusion SimpleRuleBasedPathFilter::match(const ResKeyPath& path) 
     return node->fIncluded;
 }
 
+
+SimpleRuleBasedPathFilter::Tree::Tree(const Tree& other)
+        : fIncluded(other.fIncluded), fChildren(other.fChildren) {
+    // Note: can't use the default copy assignment because of the std::unique_ptr
+    if (other.fWildcard) {
+        fWildcard.reset(new Tree(*other.fWildcard));
+    }
+}
+
+bool SimpleRuleBasedPathFilter::Tree::isLeaf() const {
+    return fChildren.empty() && !fWildcard;
+}
+
+void SimpleRuleBasedPathFilter::Tree::applyRule(
+        const ResKeyPath& path,
+        std::list<std::string>::const_iterator it,
+        bool inclusionRule,
+        UErrorCode& status) {
+
+    // Base Case
+    if (it == path.pieces().end()) {
+        if (isVerbose() && (fIncluded != PARTIAL || !isLeaf())) {
+            std::cout << "genrb info: rule on path " << path
+                << " overrides previous rules" << std::endl;
+        }
+        fIncluded = inclusionRule ? INCLUDE : EXCLUDE;
+        fChildren.clear();
+        fWildcard.reset();
+        return;
+    }
+
+    // Recursive Step
+    auto& key = *it;
+    if (key == "*") {
+        // Case 1: Wildcard
+        if (!fWildcard) {
+            fWildcard.reset(new Tree());
+        }
+        // Apply the rule to fWildcard and also to all existing children.
+        it++;
+        fWildcard->applyRule(path, it, inclusionRule, status);
+        for (auto& child : fChildren) {
+            child.second.applyRule(path, it, inclusionRule, status);
+        }
+        it--;
+
+    } else {
+        // Case 2: Normal Key
+        auto search = fChildren.find(key);
+        if (search == fChildren.end()) {
+            if (fWildcard) {
+                // Deep-copy the existing wildcard tree into the new key
+                search = fChildren.emplace(key, Tree(*fWildcard)).first;
+            } else {
+                search = fChildren.emplace(key, Tree()).first;
+            }
+        }
+        it++;
+        search->second.applyRule(path, it, inclusionRule, status);
+        it--;
+    }
+}
+
 void SimpleRuleBasedPathFilter::Tree::print(std::ostream& out, int32_t indent) const {
     for (int32_t i=0; i<indent; i++) out << "\t";
     out << "included: " << kEInclusionNames[fIncluded] << std::endl;
@@ -153,12 +218,19 @@ void SimpleRuleBasedPathFilter::Tree::print(std::ostream& out, int32_t indent) c
         for (int32_t i=0; i<indent; i++) out << "\t";
         out << "}" << std::endl;
     }
+    if (fWildcard) {
+        for (int32_t i=0; i<indent; i++) out << "\t";
+        out << "* {" << std::endl;
+        fWildcard->print(out, indent + 1);
+        for (int32_t i=0; i<indent; i++) out << "\t";
+        out << "}" << std::endl;
+    }
 }
 
 void SimpleRuleBasedPathFilter::print(std::ostream& out) const {
     out << "SimpleRuleBasedPathFilter {" << std::endl;
     fRoot.print(out, 1);
-    out << "}";
+    out << "}" << std::endl;
 }
 
 std::ostream& operator<<(std::ostream& out, const SimpleRuleBasedPathFilter& value) {

@@ -183,11 +183,11 @@ pt{
         MF{"São Martinho"}
         MG{"Madagascar"}
         MH{"Ilhas Marshall"}
-        MK{"Macedônia"}
+        MK{"Macedônia do Norte"}
         ML{"Mali"}
         MM{"Mianmar (Birmânia)"}
         MN{"Mongólia"}
-        MO{"RAE de Macau (China)"}
+        MO{"Macau, RAE da China"}
         MP{"Ilhas Marianas do Norte"}
         MQ{"Martinica"}
         MR{"Mauritânia"}
@@ -253,7 +253,7 @@ pt{
         SV{"El Salvador"}
         SX{"Sint Maarten"}
         SY{"Síria"}
-        SZ{"Suazilândia"}
+        SZ{"Essuatíni"}
         TA{"Tristão da Cunha"}
         TC{"Ilhas Turcas e Caicos"}
         TD{"Chade"}
@@ -287,6 +287,8 @@ pt{
         VU{"Vanuatu"}
         WF{"Wallis e Futuna"}
         WS{"Samoa"}
+        XA{"Pseudossotaques"}
+        XB{"Pseudobidirecional"}
         XK{"Kosovo"}
         YE{"Iêmen"}
         YT{"Mayotte"}
@@ -308,9 +310,9 @@ pt{
         CG{"Congo"}
         CI{"Côte d’Ivoire"}
         CZ{"República Tcheca"}
-        FK{"Ilhas Falkland (Ilhas Malvinas)"}
-        MK{"Macedônia (ARIM)"}
+        FK{"Ilhas Malvinas (Ilhas Falkland)"}
+        SZ{"Suazilândia"}
         TL{"República Democrática de Timor-Leste"}
     }
-    Version{"2.1.43.65"}
+    Version{"36"}
 }

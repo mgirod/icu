@@ -13,6 +13,7 @@
 #include "numparse_affixes.h"
 #include "numparse_utils.h"
 #include "number_utils.h"
+#include "string_segment.h"
 
 using namespace icu;
 using namespace icu::numparse;
@@ -109,7 +110,12 @@ void AffixPatternMatcherBuilder::consumeToken(AffixPatternType type, UChar32 cp,
 
     } else {
         // Case 3: the token is a non-ignorable literal.
-        addMatcher(fWarehouse.nextCodePointMatcher(cp));
+        if (auto* ptr = fWarehouse.nextCodePointMatcher(cp, status)) {
+            addMatcher(*ptr);
+        } else {
+            // OOM; unwind the stack
+            return;
+        }
     }
     fLastTypeOrCp = type != TYPE_CODEPOINT ? type : cp;
 }
@@ -152,8 +158,15 @@ IgnorablesMatcher& AffixTokenMatcherWarehouse::ignorables() {
     return fSetupData->ignorables;
 }
 
-NumberParseMatcher& AffixTokenMatcherWarehouse::nextCodePointMatcher(UChar32 cp) {
-    return *fCodePoints.create(cp);
+NumberParseMatcher* AffixTokenMatcherWarehouse::nextCodePointMatcher(UChar32 cp, UErrorCode& status) {
+    if (U_FAILURE(status)) {
+        return nullptr;
+    }
+    auto* result = fCodePoints.create(cp);
+    if (result == nullptr) {
+        status = U_MEMORY_ALLOCATION_ERROR;
+    }
+    return result;
 }
 
 
@@ -268,7 +281,9 @@ void AffixMatcherWarehouse::createAffixMatchers(const AffixPatternProvider& patt
     AffixPatternMatcher* posSuffix = nullptr;
 
     // Pre-process the affix strings to resolve LDML rules like sign display.
-    for (int8_t signum = 1; signum >= -1; signum--) {
+    for (int8_t signumInt = 1; signumInt >= -1; signumInt--) {
+        auto signum = static_cast<Signum>(signumInt);
+
         // Generate Prefix
         bool hasPrefix = false;
         PatternStringUtils::patternInfoToStringBuilder(

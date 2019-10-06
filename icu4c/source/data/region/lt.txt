@@ -183,7 +183,7 @@ lt{
         MF{"Sen Martenas"}
         MG{"Madagaskaras"}
         MH{"Maršalo Salos"}
-        MK{"Makedonija"}
+        MK{"Šiaurės Makedonija"}
         ML{"Malis"}
         MM{"Mianmaras (Birma)"}
         MN{"Mongolija"}
@@ -309,7 +309,7 @@ lt{
         CI{"Dramblio Kaulo Kranto Respublika"}
         CZ{"Čekijos Respublika"}
         FK{"Folklando (Malvinų) Salos"}
-        MK{"Makedonijos Respublika"}
+        SZ{"Svazilandas"}
     }
-    Version{"2.1.44.91"}
+    Version{"36"}
 }

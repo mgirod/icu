@@ -43,7 +43,6 @@ class DefaultSymbolProvider : public SymbolProvider {
                 return u"\uFFFD";
             default:
                 UPRV_UNREACHABLE;
-                return {}; // silence compiler warnings
         }
     }
 };
@@ -218,7 +217,7 @@ void AffixUtilsTest::testUnescapeWithSymbolProvider() {
     NumericSymbolProvider provider;
 
     UErrorCode status = U_ZERO_ERROR;
-    NumberStringBuilder sb;
+    FormattedStringBuilder sb;
     for (auto& cas : cases) {
         UnicodeString input(cas[0]);
         UnicodeString expected(cas[1]);
@@ -240,7 +239,7 @@ void AffixUtilsTest::testUnescapeWithSymbolProvider() {
 
 UnicodeString AffixUtilsTest::unescapeWithDefaults(const SymbolProvider &defaultProvider,
                                                           UnicodeString input, UErrorCode &status) {
-    NumberStringBuilder nsb;
+    FormattedStringBuilder nsb;
     int32_t length = AffixUtils::unescape(input, nsb, 0, defaultProvider, UNUM_FIELD_COUNT, status);
     assertEquals("Return value of unescape", nsb.length(), length);
     return nsb.toUnicodeString();

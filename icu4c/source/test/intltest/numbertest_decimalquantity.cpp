@@ -18,10 +18,13 @@ void DecimalQuantityTest::runIndexedTest(int32_t index, UBool exec, const char *
     }
     TESTCASE_AUTO_BEGIN;
         TESTCASE_AUTO(testDecimalQuantityBehaviorStandalone);
-        TESTCASE_AUTO(testSwitchStorage);;
+        TESTCASE_AUTO(testSwitchStorage);
         TESTCASE_AUTO(testCopyMove);
         TESTCASE_AUTO(testAppend);
-        TESTCASE_AUTO(testConvertToAccurateDouble);
+        if (!quick) {
+            // Slow test: run in exhaustive mode only
+            TESTCASE_AUTO(testConvertToAccurateDouble);
+        }
         TESTCASE_AUTO(testUseApproximateDoubleWhenAble);
         TESTCASE_AUTO(testHardDoubleConversion);
         TESTCASE_AUTO(testToDouble);

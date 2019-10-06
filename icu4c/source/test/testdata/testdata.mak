@@ -34,13 +34,12 @@ CREATE_DIRS :
 
 "$(TESTDATAOUT)\testdata.dat" :
 	@echo Building test data
-	set PYTHONPATH=$(ICUSRCDATA);%PYTHONPATH%
-	py -3 -m buildtool \
-		--format windirect \
+	set PYTHONPATH=$(ICUP)\source\python;%PYTHONPATH%
+	py -3 -B -m icutools.databuilder \
+		--mode windows-exec \
 		--tool_dir "$(ICUTOOLS)" \
 		--tool_cfg "$(CFG)" \
-		--glob_dir "$(TESTDATA)" \
-		--in_dir "$(TESTDATA)" \
+		--src_dir "$(TESTDATA)" \
 		--tmp_dir "$(TESTDATATMP)" \
 		--out_dir "$(TESTDATABLD)"
 	"$(ICUPBIN)\pkgdata" -f -v -m common -c -p"$(TESTPKG)" -d "$(TESTDATAOUT)" -T "$(TESTDATABLD)" -s "$(TESTDATABLD)" $(TESTDATATMP)\testdata.lst

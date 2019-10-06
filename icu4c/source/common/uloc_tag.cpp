@@ -406,13 +406,22 @@ _isAlphaNumericString(const char* s, int32_t len) {
 }
 
 static UBool
-_isLanguageSubtag(const char* s, int32_t len) {
+_isAlphaNumericStringLimitedLength(const char* s, int32_t len, int32_t min, int32_t max) {
+    if (len < 0) {
+        len = (int32_t)uprv_strlen(s);
+    }
+    if (len >= min && len <= max && _isAlphaNumericString(s, len)) {
+        return TRUE;
+    }
+    return FALSE;
+}
+
+U_CFUNC UBool
+ultag_isLanguageSubtag(const char* s, int32_t len) {
     /*
-     * language      = 2*3ALPHA            ; shortest ISO 639 code
-     *                 ["-" extlang]       ; sometimes followed by
-     *                                     ;   extended language subtags
-     *               / 4ALPHA              ; or reserved for future use
-     *               / 5*8ALPHA            ; or registered language subtag
+     * unicode_language_subtag = alpha{2,3} | alpha{5,8};
+     * NOTE: Per ICUTC 2019/01/23- accepting alpha 4
+     * See ICU-20372
      */
     if (len < 0) {
         len = (int32_t)uprv_strlen(s);
@@ -438,8 +447,8 @@ _isExtlangSubtag(const char* s, int32_t len) {
     return FALSE;
 }
 
-static UBool
-_isScriptSubtag(const char* s, int32_t len) {
+U_CFUNC UBool
+ultag_isScriptSubtag(const char* s, int32_t len) {
     /*
      * script        = 4ALPHA              ; ISO 15924 code
      */
@@ -452,8 +461,8 @@ _isScriptSubtag(const char* s, int32_t len) {
     return FALSE;
 }
 
-static UBool
-_isRegionSubtag(const char* s, int32_t len) {
+U_CFUNC UBool
+ultag_isRegionSubtag(const char* s, int32_t len) {
     /*
      * region        = 2ALPHA              ; ISO 3166-1 code
      *               / 3DIGIT              ; UN M.49 code
@@ -479,7 +488,7 @@ _isVariantSubtag(const char* s, int32_t len) {
     if (len < 0) {
         len = (int32_t)uprv_strlen(s);
     }
-    if (len >= 5 && len <= 8 && _isAlphaNumericString(s, len)) {
+    if (_isAlphaNumericStringLimitedLength(s, len, 5, 8)) {
         return TRUE;
     }
     if (len == 4 && ISNUMERIC(*s) && _isAlphaNumericString(s + 1, 3)) {
@@ -489,29 +498,64 @@ _isVariantSubtag(const char* s, int32_t len) {
 }
 
 static UBool
+_isSepListOf(UBool (*test)(const char*, int32_t), const char* s, int32_t len) {
+    const char *p = s;
+    const char *pSubtag = NULL;
+
+    if (len < 0) {
+        len = (int32_t)uprv_strlen(s);
+    }
+
+    while ((p - s) < len) {
+        if (*p == SEP) {
+            if (pSubtag == NULL) {
+                return FALSE;
+            }
+            if (!test(pSubtag, (int32_t)(p - pSubtag))) {
+                return FALSE;
+            }
+            pSubtag = NULL;
+        } else if (pSubtag == NULL) {
+            pSubtag = p;
+        }
+        p++;
+    }
+    if (pSubtag == NULL) {
+        return FALSE;
+    }
+    return test(pSubtag, (int32_t)(p - pSubtag));
+}
+
+U_CFUNC UBool
+ultag_isVariantSubtags(const char* s, int32_t len) {
+    return _isSepListOf(&_isVariantSubtag, s, len);
+}
+
+// This is for the ICU-specific "lvariant" handling.
+static UBool
 _isPrivateuseVariantSubtag(const char* s, int32_t len) {
     /*
      * variant       = 1*8alphanum         ; registered variants
      *               / (DIGIT 3alphanum)
      */
-    if (len < 0) {
-        len = (int32_t)uprv_strlen(s);
-    }
-    if (len >= 1 && len <= 8 && _isAlphaNumericString(s, len)) {
-        return TRUE;
-    }
-    return FALSE;
+    return _isAlphaNumericStringLimitedLength(s, len , 1, 8);
 }
 
 static UBool
 _isExtensionSingleton(const char* s, int32_t len) {
     /*
      * extension     = singleton 1*("-" (2*8alphanum))
+     *
+     * singleton     = DIGIT               ; 0 - 9
+     *               / %x41-57             ; A - W
+     *               / %x59-5A             ; Y - Z
+     *               / %x61-77             ; a - w
+     *               / %x79-7A             ; y - z
      */
     if (len < 0) {
         len = (int32_t)uprv_strlen(s);
     }
-    if (len == 1 && ISALPHA(*s) && (uprv_tolower(*s) != PRIVATEUSE)) {
+    if (len == 1 && (ISALPHA(*s) || ISNUMERIC(*s)) && (uprv_tolower(*s) != PRIVATEUSE)) {
         return TRUE;
     }
     return FALSE;
@@ -522,42 +566,12 @@ _isExtensionSubtag(const char* s, int32_t len) {
     /*
      * extension     = singleton 1*("-" (2*8alphanum))
      */
-    if (len < 0) {
-        len = (int32_t)uprv_strlen(s);
-    }
-    if (len >= 2 && len <= 8 && _isAlphaNumericString(s, len)) {
-        return TRUE;
-    }
-    return FALSE;
+    return _isAlphaNumericStringLimitedLength(s, len, 2, 8);
 }
 
-static UBool
-_isExtensionSubtags(const char* s, int32_t len) {
-    const char *p = s;
-    const char *pSubtag = NULL;
-
-    if (len < 0) {
-        len = (int32_t)uprv_strlen(s);
-    }
-
-    while ((p - s) < len) {
-        if (*p == SEP) {
-            if (pSubtag == NULL) {
-                return FALSE;
-            }
-            if (!_isExtensionSubtag(pSubtag, (int32_t)(p - pSubtag))) {
-                return FALSE;
-            }
-            pSubtag = NULL;
-        } else if (pSubtag == NULL) {
-            pSubtag = p;
-        }
-        p++;
-    }
-    if (pSubtag == NULL) {
-        return FALSE;
-    }
-    return _isExtensionSubtag(pSubtag, (int32_t)(p - pSubtag));
+U_CFUNC UBool
+ultag_isExtensionSubtags(const char* s, int32_t len) {
+    return _isSepListOf(&_isExtensionSubtag, s, len);
 }
 
 static UBool
@@ -565,58 +579,195 @@ _isPrivateuseValueSubtag(const char* s, int32_t len) {
     /*
      * privateuse    = "x" 1*("-" (1*8alphanum))
      */
+    return _isAlphaNumericStringLimitedLength(s, len, 1, 8);
+}
+
+U_CFUNC UBool
+ultag_isPrivateuseValueSubtags(const char* s, int32_t len) {
+    return _isSepListOf(&_isPrivateuseValueSubtag, s, len);
+}
+
+U_CFUNC UBool
+ultag_isUnicodeLocaleAttribute(const char* s, int32_t len) {
+    /*
+     * attribute = alphanum{3,8} ;
+     */
+    return _isAlphaNumericStringLimitedLength(s, len , 3, 8);
+}
+
+U_CFUNC UBool
+ultag_isUnicodeLocaleAttributes(const char* s, int32_t len) {
+    return _isSepListOf(&ultag_isUnicodeLocaleAttribute, s, len);
+}
+
+U_CFUNC UBool
+ultag_isUnicodeLocaleKey(const char* s, int32_t len) {
+    /*
+     * key = alphanum alpha ;
+     */
     if (len < 0) {
         len = (int32_t)uprv_strlen(s);
     }
-    if (len >= 1 && len <= 8 && _isAlphaNumericString(s, len)) {
+    if (len == 2 && (ISALPHA(*s) || ISNUMERIC(*s)) && ISALPHA(s[1])) {
+        return TRUE;
+    }
+    return FALSE;
+}
+
+U_CFUNC UBool
+_isUnicodeLocaleTypeSubtag(const char*s, int32_t len) {
+    /*
+     * alphanum{3,8}
+     */
+    return _isAlphaNumericStringLimitedLength(s, len , 3, 8);
+}
+
+U_CFUNC UBool
+ultag_isUnicodeLocaleType(const char*s, int32_t len) {
+    /*
+     * type = alphanum{3,8} (sep alphanum{3,8})* ;
+     */
+    return _isSepListOf(&_isUnicodeLocaleTypeSubtag, s, len);
+}
+
+static UBool
+_isTKey(const char* s, int32_t len)
+{
+    /*
+     * tkey = alpha digit ;
+     */
+    if (len < 0) {
+        len = (int32_t)uprv_strlen(s);
+    }
+    if (len == 2 && ISALPHA(*s) && ISNUMERIC(*(s + 1))) {
         return TRUE;
     }
     return FALSE;
 }
 
 static UBool
-_isPrivateuseValueSubtags(const char* s, int32_t len) {
-    const char *p = s;
-    const char *pSubtag = NULL;
-
-    if (len < 0) {
-        len = (int32_t)uprv_strlen(s);
-    }
-
-    while ((p - s) < len) {
-        if (*p == SEP) {
-            if (pSubtag == NULL) {
-                return FALSE;
-            }
-            if (!_isPrivateuseValueSubtag(pSubtag, (int32_t)(p - pSubtag))) {
-                return FALSE;
-            }
-            pSubtag = NULL;
-        } else if (pSubtag == NULL) {
-            pSubtag = p;
-        }
-        p++;
-    }
-    if (pSubtag == NULL) {
-        return FALSE;
-    }
-    return _isPrivateuseValueSubtag(pSubtag, (int32_t)(p - pSubtag));
+_isTValue(const char* s, int32_t len)
+{
+    /*
+     * tvalue = (sep alphanum{3,8})+ ;
+     */
+    return _isAlphaNumericStringLimitedLength(s, len , 3, 8);
 }
 
-U_CFUNC UBool
-ultag_isUnicodeLocaleKey(const char* s, int32_t len) {
-    if (len < 0) {
-        len = (int32_t)uprv_strlen(s);
-    }
-    if (len == 2 && _isAlphaNumericString(s, len)) {
-        return TRUE;
+static UBool
+_isTransformedExtensionSubtag(int32_t& state, const char* s, int32_t len)
+{
+    const int32_t kStart = 0;       // Start, wait for unicode_language_subtag, tkey or end
+    const int32_t kGotLanguage = 1; // Got unicode_language_subtag, wait for unicode_script_subtag,
+                                    // unicode_region_subtag, unicode_variant_subtag, tkey or end
+    const int32_t kGotScript = 2;   // Got unicode_script_subtag, wait for unicode_region_subtag,
+                                    // unicode_variant_subtag, tkey, or end
+    const int32_t kGotRegion = 3;   // Got unicode_region_subtag, wait for unicode_variant_subtag,
+                                    // tkey, or end.
+    const int32_t kGotVariant = 4;  // Got unicode_variant_subtag, wait for unicode_variant_subtag
+                                    // tkey or end.
+    const int32_t kGotTKey = -1;    // Got tkey, wait for tvalue. ERROR if stop here.
+    const int32_t kGotTValue = 6;   // Got tvalue, wait for tkey, tvalue or end
+
+    switch (state) {
+        case kStart:
+            if (ultag_isLanguageSubtag(s, len)) {
+                state = kGotLanguage;
+                return TRUE;
+            }
+            if (_isTKey(s, len)) {
+                state = kGotTKey;
+                return TRUE;
+            }
+            return FALSE;
+        case kGotLanguage:
+            if (ultag_isScriptSubtag(s, len)) {
+                state = kGotScript;
+                return TRUE;
+            }
+            U_FALLTHROUGH;
+        case kGotScript:
+            if (ultag_isRegionSubtag(s, len)) {
+                state = kGotRegion;
+                return TRUE;
+            }
+            U_FALLTHROUGH;
+        case kGotRegion:
+            U_FALLTHROUGH;
+        case kGotVariant:
+            if (_isVariantSubtag(s, len)) {
+                state = kGotVariant;
+                return TRUE;
+            }
+            if (_isTKey(s, len)) {
+                state = kGotTKey;
+                return TRUE;
+            }
+            return FALSE;
+        case kGotTKey:
+            if (_isTValue(s, len)) {
+                state = kGotTValue;
+                return TRUE;
+            }
+            return FALSE;
+        case kGotTValue:
+            if (_isTKey(s, len)) {
+                state = kGotTKey;
+                return TRUE;
+            }
+            if (_isTValue(s, len)) {
+                return TRUE;
+            }
+            return FALSE;
     }
     return FALSE;
 }
 
-U_CFUNC UBool
-ultag_isUnicodeLocaleType(const char*s, int32_t len) {
+static UBool
+_isUnicodeExtensionSubtag(int32_t& state, const char* s, int32_t len)
+{
+    const int32_t kStart = 0;         // Start, wait for a key or attribute or end
+    const int32_t kGotKey = 1;        // Got a key, wait for type or key or end
+    const int32_t kGotType = 2;       // Got a type, wait for key or end
+
+    switch (state) {
+        case kStart:
+            if (ultag_isUnicodeLocaleKey(s, len)) {
+                state = kGotKey;
+                return TRUE;
+            }
+            if (ultag_isUnicodeLocaleAttribute(s, len)) {
+                return TRUE;
+            }
+            return FALSE;
+        case kGotKey:
+            if (ultag_isUnicodeLocaleKey(s, len)) {
+                return TRUE;
+            }
+            if (_isUnicodeLocaleTypeSubtag(s, len)) {
+                state = kGotType;
+                return TRUE;
+            }
+            return FALSE;
+        case kGotType:
+            if (ultag_isUnicodeLocaleKey(s, len)) {
+                state = kGotKey;
+                return TRUE;
+            }
+            if (_isUnicodeLocaleTypeSubtag(s, len)) {
+                return TRUE;
+            }
+            return FALSE;
+    }
+    return FALSE;
+}
+
+static UBool
+_isStatefulSepListOf(UBool (*test)(int32_t&, const char*, int32_t), const char* s, int32_t len)
+{
+    int32_t state = 0;
     const char* p;
+    const char* start = s;
     int32_t subtagLen = 0;
 
     if (len < 0) {
@@ -625,22 +776,34 @@ ultag_isUnicodeLocaleType(const char*s, int32_t len) {
 
     for (p = s; len > 0; p++, len--) {
         if (*p == SEP) {
-            if (subtagLen < 3) {
+            if (!test(state, start, subtagLen)) {
                 return FALSE;
             }
             subtagLen = 0;
-        } else if (ISALPHA(*p) || ISNUMERIC(*p)) {
-            subtagLen++;
-            if (subtagLen > 8) {
-                return FALSE;
-            }
+            start = p + 1;
         } else {
-            return FALSE;
+            subtagLen++;
         }
     }
 
-    return (subtagLen >= 3);
+    if (test(state, start, subtagLen) && state >= 0) {
+        return TRUE;
+    }
+    return FALSE;
 }
+
+U_CFUNC UBool
+ultag_isTransformedExtensionSubtags(const char* s, int32_t len)
+{
+    return _isStatefulSepListOf(&_isTransformedExtensionSubtag, s, len);
+}
+
+U_CFUNC UBool
+ultag_isUnicodeExtensionSubtags(const char* s, int32_t len) {
+    return _isStatefulSepListOf(&_isUnicodeExtensionSubtag, s, len);
+}
+
+
 /*
 * -------------------------------------------------
 *
@@ -850,7 +1013,7 @@ _appendLanguageToLanguageTag(const char* localeID, icu::ByteSink& sink, UBool st
 
     if (len == 0) {
         sink.Append(LANG_UND, LANG_UND_LEN);
-    } else if (!_isLanguageSubtag(buf, len)) {
+    } else if (!ultag_isLanguageSubtag(buf, len)) {
             /* invalid language code */
         if (strict) {
             *status = U_ILLEGAL_ARGUMENT_ERROR;
@@ -894,7 +1057,7 @@ _appendScriptToLanguageTag(const char* localeID, icu::ByteSink& sink, UBool stri
     }
 
     if (len > 0) {
-        if (!_isScriptSubtag(buf, len)) {
+        if (!ultag_isScriptSubtag(buf, len)) {
             /* invalid script code */
             if (strict) {
                 *status = U_ILLEGAL_ARGUMENT_ERROR;
@@ -926,7 +1089,7 @@ _appendRegionToLanguageTag(const char* localeID, icu::ByteSink& sink, UBool stri
     }
 
     if (len > 0) {
-        if (!_isRegionSubtag(buf, len)) {
+        if (!ultag_isRegionSubtag(buf, len)) {
             /* invalid region code */
             if (strict) {
                 *status = U_ILLEGAL_ARGUMENT_ERROR;
@@ -1246,7 +1409,7 @@ _appendKeywordsToLanguageTag(const char* localeID, icu::ByteSink& sink, UBool st
                 }
             } else {
                 if (*key == PRIVATEUSE) {
-                    if (!_isPrivateuseValueSubtags(buf.data(), len)) {
+                    if (!ultag_isPrivateuseValueSubtags(buf.data(), len)) {
                         if (strict) {
                             *status = U_ILLEGAL_ARGUMENT_ERROR;
                             break;
@@ -1254,7 +1417,7 @@ _appendKeywordsToLanguageTag(const char* localeID, icu::ByteSink& sink, UBool st
                         continue;
                     }
                 } else {
-                    if (!_isExtensionSingleton(key, keylen) || !_isExtensionSubtags(buf.data(), len)) {
+                    if (!_isExtensionSingleton(key, keylen) || !ultag_isExtensionSubtags(buf.data(), len)) {
                         if (strict) {
                             *status = U_ILLEGAL_ARGUMENT_ERROR;
                             break;
@@ -1395,10 +1558,8 @@ _appendLDMLExtensionAsKeywords(const char* ldmlext, ExtensionListEntry** appendT
                 return;
             }
 
-            if (!_addAttributeToList(&attrFirst, attr)) {
-                *status = U_ILLEGAL_ARGUMENT_ERROR;
-                return;
-            }
+            // duplicate attribute is ignored, causes no error.
+            _addAttributeToList(&attrFirst, attr);
 
             /* next tag */
             pTag += len;
@@ -1900,13 +2061,26 @@ ultag_parse(const char* tag, int32_t tagLen, int32_t* parsedLen, UErrorCode* sta
         return t.orphan();
     }
 
+    size_t parsedLenDelta = 0;
+    // Grandfathered tag will be consider together. Grandfathered tag with intervening
+    // script and region such as art-DE-lojban or art-Latn-lojban won't be
+    // matched.
     /* check if the tag is grandfathered */
     for (i = 0; i < UPRV_LENGTHOF(GRANDFATHERED); i += 2) {
-        if (uprv_stricmp(GRANDFATHERED[i], tagBuf) == 0) {
+        int32_t checkGrandfatheredLen = static_cast<int32_t>(uprv_strlen(GRANDFATHERED[i]));
+        if (tagLen < checkGrandfatheredLen) {
+            continue;
+        }
+        if (tagLen > checkGrandfatheredLen && tagBuf[checkGrandfatheredLen] != '-') {
+            // make sure next char is '-'.
+            continue;
+        }
+        if (uprv_strnicmp(GRANDFATHERED[i], tagBuf, checkGrandfatheredLen) == 0) {
             int32_t newTagLength;
 
-            grandfatheredLen = tagLen;  /* back up for output parsedLen */
-            newTagLength = static_cast<int32_t>(uprv_strlen(GRANDFATHERED[i+1]));
+            grandfatheredLen = checkGrandfatheredLen;  /* back up for output parsedLen */
+            int32_t replacementLen = static_cast<int32_t>(uprv_strlen(GRANDFATHERED[i+1]));
+            newTagLength = replacementLen + tagLen - checkGrandfatheredLen;
             if (tagLen < newTagLength) {
                 uprv_free(tagBuf);
                 tagBuf = (char*)uprv_malloc(newTagLength + 1);
@@ -1917,12 +2091,15 @@ ultag_parse(const char* tag, int32_t tagLen, int32_t* parsedLen, UErrorCode* sta
                 t->buf = tagBuf;
                 tagLen = newTagLength;
             }
+            parsedLenDelta = checkGrandfatheredLen - replacementLen;
             uprv_strcpy(t->buf, GRANDFATHERED[i + 1]);
+            if (checkGrandfatheredLen != tagLen) {
+                uprv_strcpy(t->buf + replacementLen, tag + checkGrandfatheredLen);
+            }
             break;
         }
     }
 
-    size_t parsedLenDelta = 0;
     if (grandfatheredLen == 0) {
         for (i = 0; i < UPRV_LENGTHOF(REDUNDANT); i += 2) {
             const char* redundantTag = REDUNDANT[i];
@@ -1991,7 +2168,7 @@ ultag_parse(const char* tag, int32_t tagLen, int32_t* parsedLen, UErrorCode* sta
         subtagLen = (int32_t)(pSep - pSubtag);
 
         if (next & LANG) {
-            if (_isLanguageSubtag(pSubtag, subtagLen)) {
+            if (ultag_isLanguageSubtag(pSubtag, subtagLen)) {
                 *pSep = 0;  /* terminate */
                 // TODO: move deprecated language code handling here.
                 t->language = T_CString_toLowerCase(pSubtag);
@@ -2018,7 +2195,7 @@ ultag_parse(const char* tag, int32_t tagLen, int32_t* parsedLen, UErrorCode* sta
             }
         }
         if (next & SCRT) {
-            if (_isScriptSubtag(pSubtag, subtagLen)) {
+            if (ultag_isScriptSubtag(pSubtag, subtagLen)) {
                 char *p = pSubtag;
 
                 *pSep = 0;
@@ -2038,7 +2215,7 @@ ultag_parse(const char* tag, int32_t tagLen, int32_t* parsedLen, UErrorCode* sta
             }
         }
         if (next & REGN) {
-            if (_isRegionSubtag(pSubtag, subtagLen)) {
+            if (ultag_isRegionSubtag(pSubtag, subtagLen)) {
                 *pSep = 0;
                 // TODO: move deprecated region code handling here.
                 t->region = T_CString_toUpperCase(pSubtag);
@@ -2237,8 +2414,7 @@ ultag_parse(const char* tag, int32_t tagLen, int32_t* parsedLen, UErrorCode* sta
     }
 
     if (parsedLen != NULL) {
-        *parsedLen = (grandfatheredLen > 0) ? grandfatheredLen :
-            (int32_t)(pLastGoodPosition - t->buf + parsedLenDelta);
+        *parsedLen = (int32_t)(pLastGoodPosition - t->buf + parsedLenDelta);
     }
 
     return t.orphan();
@@ -2529,7 +2705,7 @@ ulocimp_toLanguageTag(const char* localeID,
                     buf[1] = SEP;
                     len = uloc_getKeywordValue(localeID, key, &buf[2], sizeof(buf) - 2, &tmpStatus);
                     if (U_SUCCESS(tmpStatus)) {
-                        if (_isPrivateuseValueSubtags(&buf[2], len)) {
+                        if (ultag_isPrivateuseValueSubtags(&buf[2], len)) {
                             /* return private use only tag */
                             sink.Append(buf, len + 2);
                             done = TRUE;

@@ -143,7 +143,11 @@ MacroProps NumberPropertyMapper::oldToNew(const DecimalFormatProperties& propert
     if (!properties.currencyUsage.isNull()) {
         precision = Precision::constructCurrency(currencyUsage).withCurrency(currency);
     } else if (roundingIncrement != 0.0) {
-        precision = Precision::constructIncrement(roundingIncrement, minFrac);
+        if (PatternStringUtils::ignoreRoundingIncrement(roundingIncrement, maxFrac)) {
+            precision = Precision::constructFraction(minFrac, maxFrac);
+        } else {
+            precision = Precision::constructIncrement(roundingIncrement, minFrac);
+        }
     } else if (explicitMinMaxSig) {
         minSig = minSig < 1 ? 1 : minSig > kMaxIntFracSig ? kMaxIntFracSig : minSig;
         maxSig = maxSig < 0 ? kMaxIntFracSig : maxSig < minSig ? minSig : maxSig > kMaxIntFracSig
@@ -155,7 +159,7 @@ MacroProps NumberPropertyMapper::oldToNew(const DecimalFormatProperties& propert
         precision = Precision::constructCurrency(currencyUsage);
     }
     if (!precision.isBogus()) {
-        precision = precision.withMode(roundingMode);
+        precision.fRoundingMode = roundingMode;
         macros.precision = precision;
     }
 
@@ -178,7 +182,7 @@ MacroProps NumberPropertyMapper::oldToNew(const DecimalFormatProperties& propert
     // PADDING //
     /////////////
 
-    if (properties.formatWidth != -1) {
+    if (properties.formatWidth > 0) {
         macros.padder = Padder::forProperties(properties);
     }
 
@@ -234,10 +238,10 @@ MacroProps NumberPropertyMapper::oldToNew(const DecimalFormatProperties& propert
             int maxFrac_ = properties.maximumFractionDigits;
             if (minInt_ == 0 && maxFrac_ == 0) {
                 // Patterns like "#E0" and "##E0", which mean no rounding!
-                macros.precision = Precision::unlimited().withMode(roundingMode);
+                macros.precision = Precision::unlimited();
             } else if (minInt_ == 0 && minFrac_ == 0) {
                 // Patterns like "#.##E0" (no zeros in the mantissa), which mean round to maxFrac+1
-                macros.precision = Precision::constructSignificant(1, maxFrac_ + 1).withMode(roundingMode);
+                macros.precision = Precision::constructSignificant(1, maxFrac_ + 1);
             } else {
                 int maxSig_ = minInt_ + maxFrac_;
                 // Bug #20058: if maxInt_ > minInt_ > 1, then minInt_ should be 1.
@@ -247,8 +251,9 @@ MacroProps NumberPropertyMapper::oldToNew(const DecimalFormatProperties& propert
                 int minSig_ = minInt_ + minFrac_;
                 // To avoid regression, maxSig is not reset when minInt_ set to 1.
                 // TODO: Reset maxSig_ = 1 + minFrac_ to follow the spec.
-                macros.precision = Precision::constructSignificant(minSig_, maxSig_).withMode(roundingMode);
+                macros.precision = Precision::constructSignificant(minSig_, maxSig_);
             }
+            macros.precision.fRoundingMode = roundingMode;
         }
     }
 
